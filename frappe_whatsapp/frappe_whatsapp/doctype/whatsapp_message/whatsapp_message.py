@@ -49,6 +49,18 @@ class WhatsAppMessage(Document):
         elif self.type == "Outgoing" and self.message_type == "Template" and not self.message_id:
             self.send_template()
 
+    def after_insert(self):
+        if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name:
+            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
+            if crm_lead_doc.conversation_status == "Completed":
+                crm_lead_doc.conversation_status = "New"
+                crm_lead_doc.save(ignore_permissions=True)
+
+        if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
+            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
+            crm_lead_doc.last_reply_by_user = frappe.session.user
+            crm_lead_doc.save(ignore_permissions=True)
+
     def send_template(self):
         """Send template."""
         template = frappe.get_doc("WhatsApp Templates", self.template)

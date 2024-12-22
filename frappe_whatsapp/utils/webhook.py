@@ -39,8 +39,10 @@ def post():
 	messages = []
 	try:
 		messages = data["entry"][0]["changes"][0]["value"].get("messages", [])
+		contacts = data["entry"][0]["changes"][0]["value"].get("contacts", [])
 	except KeyError:
 		messages = data["entry"]["changes"][0]["value"].get("messages", [])
+		contacts = data["entry"]["changes"][0]["value"].get("contacts", [])
 
 	if messages:
 		for message in messages:
@@ -56,7 +58,8 @@ def post():
 					"message_id": message['id'],
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
-					"content_type":message_type
+					"content_type": message_type,
+					"custom_from_name": contacts[0]["profile"]["name"]
 				}).insert(ignore_permissions=True)
 			elif message_type == 'reaction':
 				frappe.get_doc({
@@ -66,7 +69,8 @@ def post():
 					"message": message['reaction']['emoji'],
 					"reply_to_message_id": message['reaction']['message_id'],
 					"message_id": message['id'],
-					"content_type": "reaction"
+					"content_type": "reaction",
+					"custom_from_name": contacts[0]["profile"]["name"]
 				}).insert(ignore_permissions=True)
 			elif message_type == 'interactive':
 				frappe.get_doc({
@@ -75,9 +79,10 @@ def post():
 					"from": message['from'],
 					"message": message['interactive']['nfm_reply']['response_json'],
 					"message_id": message['id'],
-					"content_type": "flow"
+					"content_type": "flow",
+					"custom_from_name": contacts[0]["profile"]["name"]
 				}).insert(ignore_permissions=True)
-			elif message_type in ["image", "audio", "video", "document"]:
+			elif message_type in ["image", "audio", "video", "document", "sticker"]:
 				settings = frappe.get_doc(
 							"WhatsApp Settings", "WhatsApp Settings",
 						)
@@ -112,7 +117,8 @@ def post():
 							"reply_to_message_id": reply_to_message_id,
 							"is_reply": is_reply,
 							"message": message[message_type].get("caption",f"/files/{file_name}"),
-							"content_type" : message_type
+							"content_type" : message_type,
+							"custom_from_name": contacts[0]["profile"]["name"]
 						}).insert(ignore_permissions=True)
 
 						file = frappe.get_doc(
@@ -138,7 +144,8 @@ def post():
 					"message_id": message['id'],
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
-					"content_type": message_type
+					"content_type": message_type,
+					"custom_from_name": contacts[0]["profile"]["name"]
 				}).insert(ignore_permissions=True)
 			else:
 				frappe.get_doc({
@@ -147,7 +154,8 @@ def post():
 					"from": message['from'],
 					"message_id": message['id'],
 					"message": message[message_type].get(message_type),
-					"content_type" : message_type
+					"content_type" : message_type,
+					"custom_from_name": contacts[0]["profile"]["name"]
 				}).insert(ignore_permissions=True)
 
 	else:
