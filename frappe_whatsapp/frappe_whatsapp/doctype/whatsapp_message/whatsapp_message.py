@@ -4,6 +4,7 @@ import json
 import frappe
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
+import random
 
 
 class WhatsAppMessage(Document):
@@ -51,10 +52,25 @@ class WhatsAppMessage(Document):
 
     def after_insert(self):
         if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name:
+            whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
+            whatsapp_message_reply.type = "Outgoing"
+            whatsapp_message_reply.to = self.get("from")
+            whatsapp_message_reply.message_type = "Manual"
+            whatsapp_message_reply.content_type = "text"
+            whatsapp_message_reply.reference_doctype = self.reference_doctype
+            whatsapp_message_reply.reference_name = self.reference_name
+            if frappe.db.count('WhatsApp Message') == 100:
+                whatsapp_message_reply.message = "Congratulations 🎉 you have won the grand prize !!!"
+            else:
+                random_replies = frappe.db.get_all("Random Reply", pluck="message")
+                whatsapp_message_reply.message = random.choice(random_replies)
+            whatsapp_message_reply.insert(ignore_permissions=True)
+
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
             if crm_lead_doc.conversation_status == "Completed":
                 crm_lead_doc.conversation_status = "New"
                 crm_lead_doc.save(ignore_permissions=True)
+                frappe.publish_realtime("new_leads", data={})
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
