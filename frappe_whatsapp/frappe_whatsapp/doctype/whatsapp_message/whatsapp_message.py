@@ -5,6 +5,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
 import random
+from frappe.utils.background_jobs import enqueue
 
 
 class WhatsAppMessage(Document):
@@ -42,7 +43,7 @@ class WhatsAppMessage(Document):
                 data["text"] = {"link": link}
 
             try:
-                self.notify(data)
+                enqueue(queue_notify, doc=self, data=data, queue="short", is_async=True)
                 self.status = "Success"
             except Exception as e:
                 self.status = "Failed"
@@ -59,7 +60,7 @@ class WhatsAppMessage(Document):
             whatsapp_message_reply.content_type = "text"
             whatsapp_message_reply.reference_doctype = self.reference_doctype
             whatsapp_message_reply.reference_name = self.reference_name
-            if frappe.db.count('WhatsApp Message') == 100:
+            if frappe.db.count('WhatsApp Message') % 100 == 0:
                 whatsapp_message_reply.message = "Congratulations 🎉 you have won the grand prize !!!"
             else:
                 random_replies = frappe.db.get_all("Random Reply", pluck="message")
@@ -70,7 +71,7 @@ class WhatsAppMessage(Document):
             if crm_lead_doc.conversation_status == "Completed":
                 crm_lead_doc.conversation_status = "New"
                 crm_lead_doc.save(ignore_permissions=True)
-                frappe.publish_realtime("new_leads", data={})
+                frappe.publish_realtime("new_leads", {})
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
@@ -131,7 +132,7 @@ class WhatsAppMessage(Document):
                 "parameters": header_parameters,
             })
 
-        self.notify(data)
+        enqueue(queue_notify, doc=self, data=data, queue="short", is_async=True)
 
     def notify(self, data):
         """Notify."""
@@ -173,11 +174,11 @@ class WhatsAppMessage(Document):
 
         return number
 
-
+def queue_notify(doc, data):
+    doc.notify(data)
 
 def on_doctype_update():
     frappe.db.add_index("WhatsApp Message", ["reference_doctype", "reference_name"])
-
 
 @frappe.whitelist()
 def send_template(to, reference_doctype, reference_name, template):

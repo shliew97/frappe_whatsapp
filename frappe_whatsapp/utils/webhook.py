@@ -5,6 +5,7 @@ import requests
 import time
 from werkzeug.wrappers import Response
 import frappe.utils
+from frappe.utils.background_jobs import enqueue
 
 
 @frappe.whitelist(allow_guest=True)
@@ -12,7 +13,8 @@ def webhook():
 	"""Meta webhook."""
 	if frappe.request.method == "GET":
 		return get()
-	return post()
+	enqueue(post, form_dict=dict(frappe.form_dict), queue="short", is_async=True)
+	return
 
 
 def get():
@@ -27,9 +29,9 @@ def get():
 
 	return Response(hub_challenge, status=200)
 
-def post():
+def post(form_dict):
 	"""Post."""
-	data = frappe.local.form_dict
+	data = form_dict
 	frappe.get_doc({
 		"doctype": "WhatsApp Notification Log",
 		"template": "Webhook",
@@ -191,8 +193,9 @@ def update_message_status(data):
 	conversation = data['statuses'][0].get('conversation', {}).get('id')
 	name = frappe.db.get_value("WhatsApp Message", filters={"message_id": id})
 
-	doc = frappe.get_doc("WhatsApp Message", name)
-	doc.status = status
-	if conversation:
-		doc.conversation_id = conversation
-	doc.save(ignore_permissions=True)
+	if name:
+		doc = frappe.get_doc("WhatsApp Message", name)
+		doc.status = status
+		if conversation:
+			doc.conversation_id = conversation
+		doc.save(ignore_permissions=True)
