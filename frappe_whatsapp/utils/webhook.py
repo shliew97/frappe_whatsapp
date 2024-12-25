@@ -6,6 +6,7 @@ import time
 from werkzeug.wrappers import Response
 import frappe.utils
 from frappe.utils.background_jobs import enqueue
+from datetime import datetime
 
 
 @frappe.whitelist(allow_guest=True)
@@ -61,7 +62,8 @@ def post(form_dict):
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
 					"content_type": message_type,
-					"from_name": contacts[0]["profile"]["name"]
+					"from_name": contacts[0]["profile"]["name"],
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
 				}).insert(ignore_permissions=True)
 			elif message_type == 'reaction':
 				frappe.get_doc({
@@ -72,7 +74,8 @@ def post(form_dict):
 					"reply_to_message_id": message['reaction']['message_id'],
 					"message_id": message['id'],
 					"content_type": "reaction",
-					"from_name": contacts[0]["profile"]["name"]
+					"from_name": contacts[0]["profile"]["name"],
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
 				}).insert(ignore_permissions=True)
 			elif message_type == 'interactive':
 				frappe.get_doc({
@@ -82,7 +85,8 @@ def post(form_dict):
 					"message": message['interactive']['nfm_reply']['response_json'],
 					"message_id": message['id'],
 					"content_type": "flow",
-					"from_name": contacts[0]["profile"]["name"]
+					"from_name": contacts[0]["profile"]["name"],
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
 				}).insert(ignore_permissions=True)
 			elif message_type in ["image", "audio", "video", "document", "sticker"]:
 				settings = frappe.get_doc(
@@ -120,7 +124,8 @@ def post(form_dict):
 							"is_reply": is_reply,
 							"message": message[message_type].get("caption",f"/files/{file_name}"),
 							"content_type" : message_type,
-							"from_name": contacts[0]["profile"]["name"]
+							"from_name": contacts[0]["profile"]["name"],
+							"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
 						}).insert(ignore_permissions=True)
 
 						file = frappe.get_doc(
@@ -147,7 +152,8 @@ def post(form_dict):
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
 					"content_type": message_type,
-					"from_name": contacts[0]["profile"]["name"]
+					"from_name": contacts[0]["profile"]["name"],
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
 				}).insert(ignore_permissions=True)
 			else:
 				frappe.get_doc({
@@ -157,7 +163,8 @@ def post(form_dict):
 					"message_id": message['id'],
 					"message": message[message_type].get(message_type),
 					"content_type" : message_type,
-					"from_name": contacts[0]["profile"]["name"]
+					"from_name": contacts[0]["profile"]["name"],
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
 				}).insert(ignore_permissions=True)
 
 	else:
