@@ -14,7 +14,7 @@ class WhatsAppMessage(Document):
 
     def before_insert(self):
         """Send message."""
-        if self.type == "Outoing":
+        if self.type == "Outgoing":
             self.timestamp = get_datetime()
         if self.type == "Outgoing" and self.message_type != "Template":
             if self.attach and not self.attach.startswith("http"):
