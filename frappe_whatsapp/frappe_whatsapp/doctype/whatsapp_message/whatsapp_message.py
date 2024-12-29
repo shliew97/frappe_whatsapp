@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
 import random
-from frappe.utils.background_jobs import enqueue
+# from frappe.utils.background_jobs import enqueue
 
 
 class WhatsAppMessage(Document):
@@ -43,7 +43,7 @@ class WhatsAppMessage(Document):
                 data["text"] = {"link": link}
 
             try:
-                enqueue(queue_notify, doc=self, data=data, queue="short", is_async=True)
+                self.notify(data)
                 self.status = "Success"
             except Exception as e:
                 self.status = "Failed"
@@ -132,7 +132,7 @@ class WhatsAppMessage(Document):
                 "parameters": header_parameters,
             })
 
-        enqueue(queue_notify, doc=self, data=data, queue="short", is_async=True)
+        self.notify(data)
 
     def notify(self, data):
         """Notify."""
@@ -174,8 +174,8 @@ class WhatsAppMessage(Document):
 
         return number
 
-def queue_notify(doc, data):
-    doc.notify(data)
+# def queue_notify(doc, data):
+#     doc.notify(data)
 
 def on_doctype_update():
     frappe.db.add_index("WhatsApp Message", ["reference_doctype", "reference_name"])
