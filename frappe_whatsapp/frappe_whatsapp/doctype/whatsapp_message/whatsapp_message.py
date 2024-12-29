@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 import json
 import frappe
+from frappe.utils import get_datetime
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
 import random
@@ -13,6 +14,8 @@ class WhatsAppMessage(Document):
 
     def before_insert(self):
         """Send message."""
+        if self.type == "Outoing":
+            self.timestamp = get_datetime()
         if self.type == "Outgoing" and self.message_type != "Template":
             if self.attach and not self.attach.startswith("http"):
                 link = frappe.utils.get_url() + "/" + self.attach
