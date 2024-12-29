@@ -184,6 +184,7 @@
    "label": "From Name"
   },
   {
+   "default": "now",
    "fieldname": "timestamp",
    "fieldtype": "Datetime",
    "label": "Timestamp",
@@ -192,7 +193,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-12-25 18:44:25.139382",
+ "modified": "2024-12-29 17:13:36.250185",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message",
