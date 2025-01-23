@@ -13,6 +13,8 @@ class WhatsAppMessage(Document):
     """Send whats app messages."""
 
     def before_insert(self):
+        if self.message_id and self.status == "Success":
+            return
         """Send message."""
         if self.type == "Outgoing":
             self.timestamp = get_datetime()
@@ -64,7 +66,7 @@ class WhatsAppMessage(Document):
             whatsapp_message_reply.reference_doctype = self.reference_doctype
             whatsapp_message_reply.reference_name = self.reference_name
             if frappe.db.count('WhatsApp Message') % 100 == 0:
-                whatsapp_message_reply.message = "Congratulations 🎉 you have won the grand prize !!!"
+                whatsapp_message_reply.message = "Congratulations 🎉 you have won the grand prize !!!"
             else:
                 random_replies = frappe.db.get_all("Random Reply", pluck="message")
                 whatsapp_message_reply.message = random.choice(random_replies)
