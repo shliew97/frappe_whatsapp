@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:product_name",
+ "creation": "2025-01-27 23:40:02.422072",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "product_name",
+  "price",
+  "voucher_count"
+ ],
+ "fields": [
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "label": "Product Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Price",
+   "options": "MYR"
+  },
+  {
+   "default": "0",
+   "fieldname": "voucher_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Voucher Count",
+   "non_negative": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-01-27 23:41:35.520852",
+ "modified_by": "Administrator",
+ "module": "Frappe Whatsapp",
+ "name": "Whatsapp Product",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

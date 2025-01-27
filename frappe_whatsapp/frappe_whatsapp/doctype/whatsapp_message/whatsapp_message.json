@@ -22,6 +22,7 @@
   "message_type",
   "message_id",
   "conversation_id",
+  "interactive_id",
   "content_type",
   "attach",
   "section_break_iyjf",
@@ -189,11 +190,16 @@
    "fieldtype": "Datetime",
    "label": "Timestamp",
    "reqd": 1
+  },
+  {
+   "fieldname": "interactive_id",
+   "fieldtype": "Data",
+   "label": "Interactive ID"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-12-29 17:13:36.250185",
+ "modified": "2025-01-28 00:35:03.505660",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message",

@@ -3,10 +3,14 @@ from frappe.utils import get_datetime
 from frappe.integrations.utils import make_post_request
 import json
 from crm.api.whatsapp import get_lead_or_deal_from_number
+from frappe.utils.background_jobs import enqueue
 
-CUSTOMER_FEEDBACK_TEMPLATE = "🌟 Good Morning {customer_name}! 🌟\n\nIt was a pleasure serving you at {outlet} yesterday! 😊\nDid you enjoy your time at HealthLand?\n\n💬 We'd love to hear your thoughts!\nLooking forward to your reply! 💜"
+CUSTOMER_FEEDBACK_TEMPLATE = "🌟 Good Morning {customer_name}! 🌟\n\nIt was a pleasure serving you at {outlet} recently! 😊\nDid you enjoy your time at HealthLand?\n\n💬 We'd love to hear your thoughts!\nLooking forward to your reply! 💜"
 
 @frappe.whitelist()
+def enqueue_send_whatsapp_template():
+    enqueue(method=schedule_send_whatsapp_template, queue="long", is_async=True)
+
 def schedule_send_whatsapp_template():
     settings = frappe.get_doc(
         "WhatsApp Settings",
@@ -19,13 +23,14 @@ def schedule_send_whatsapp_template():
         "content-type": "application/json",
     }
 
-    whatsapp_template_queues = frappe.db.get_all("WhatsApp Template Queue", filters={"status": "Pending"}, fields=["name", "phone_number", "customer_name", "outlet"], limit=5)
+    whatsapp_template_queues = frappe.db.get_all("WhatsApp Template Queue", filters={"status": "Pending"}, fields=["name", "phone_number", "customer_name", "outlet"], limit=50)
     for whatsapp_template_queue in whatsapp_template_queues:
         try:
             reference_name, doctype = get_lead_or_deal_from_number(whatsapp_template_queue.phone_number)
             if not reference_name:
                 crm_lead_doc = frappe.new_doc("CRM Lead")
-                crm_lead_doc.first_name = whatsapp_template_queue.customer_name
+                crm_lead_doc.lead_name = whatsapp_template_queue.customer_name or whatsapp_template_queue.phone_number
+                crm_lead_doc.first_name = whatsapp_template_queue.customer_name or whatsapp_template_queue.phone_number
                 crm_lead_doc.last_name = ""
                 crm_lead_doc.mobile_no = whatsapp_template_queue.phone_number
                 crm_lead_doc.insert(ignore_permissions=True)
@@ -35,7 +40,7 @@ def schedule_send_whatsapp_template():
                 "to": whatsapp_template_queue.phone_number,
                 "type": "template",
                 "template": {
-                    "name": "customer_feedback",
+                    "name": "customer_feedback_v2",
                     "language": {"code": "en"},
                     "components": [
                         {
@@ -44,7 +49,7 @@ def schedule_send_whatsapp_template():
                                 {
                                     "type": "text",
                                     "parameter_name": "customer_name",
-                                    "text": whatsapp_template_queue.customer_name
+                                    "text": whatsapp_template_queue.customer_name or "dear customer"
                                 },
                                 {
                                     "type": "text",
@@ -68,7 +73,7 @@ def schedule_send_whatsapp_template():
                     "reference_doctype": "CRM Lead",
                     "reference_name": reference_name,
                     "message_type": "Manual",
-                    "message": CUSTOMER_FEEDBACK_TEMPLATE.format(customer_name=whatsapp_template_queue.customer_name, outlet=whatsapp_template_queue.outlet),
+                    "message": CUSTOMER_FEEDBACK_TEMPLATE.format(customer_name=whatsapp_template_queue.customer_name or "dear customer", outlet=whatsapp_template_queue.outlet),
                     "content_type": "text",
                     "to": whatsapp_template_queue.phone_number,
                     "message_id": message_id,
@@ -81,15 +86,15 @@ def schedule_send_whatsapp_template():
             frappe.db.commit()
 
         except Exception as e:
-            res = frappe.flags.integration_request.json()["error"]
-            error_message = res.get("Error", res.get("message"))
-            frappe.get_doc(
-                {
-                    "doctype": "WhatsApp Notification Log",
-                    "template": "Text Message",
-                    "meta_data": frappe.flags.integration_request.json(),
-                }
-            ).insert(ignore_permissions=True)
+            # res = frappe.flags.integration_request.json()["error"]
+            # error_message = res.get("Error", res.get("message"))
+            # frappe.get_doc(
+            #     {
+            #         "doctype": "WhatsApp Notification Log",
+            #         "template": "Text Message",
+            #         "meta_data": frappe.flags.integration_request.json(),
+            #     }
+            # ).insert(ignore_permissions=True)
             frappe.db.set_value("WhatsApp Template Queue", whatsapp_template_queue.name, "status", "Failed")
             frappe.db.commit()
-            frappe.throw(msg=error_message, title=res.get("error_user_title", "Error"))
+            frappe.log_error(title="Error", message=str(e))
