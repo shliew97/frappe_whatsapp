@@ -606,3 +606,86 @@ def issue_whatsapp_voucher(whatsapp_order_doc, whatsapp_product, quantity):
         whatsapp_voucher_doc.status = "Issued"
         whatsapp_voucher_doc.whatsapp_order = whatsapp_order_doc.name
         whatsapp_voucher_doc.save(ignore_permissions=True)
+
+@frappe.whitelist()
+def redeem_whatsapp_vouchers():
+    frappe.response["success"] = False
+    vouchers_redeemed = []
+    customer_names = []
+    try:
+        if frappe.form_dict.vouchers_to_redeem["codes"]:
+            for code in frappe.form_dict.vouchers_to_redeem["codes"]:
+                whatsapp_vouchers = frappe.db.get_all("Whatsapp Voucher", filters={"name": code}, fields=["name", "status"])
+                if whatsapp_vouchers:
+                    if whatsapp_vouchers[0].status == "Issued":
+                        whatsapp_voucher = frappe.get_doc("Whatsapp Voucher", whatsapp_vouchers[0].name)
+                        whatsapp_voucher.status = "Redeemed"
+                        whatsapp_voucher.redeemed_at = get_datetime()
+                        whatsapp_voucher.save(ignore_permissions=True)
+                        if whatsapp_voucher.whatsapp_order:
+                            customer_name = frappe.db.get_value("Whatsapp Order", whatsapp_voucher.whatsapp_order, "whatsapp_customer")
+                            if customer_name not in customer_names:
+                                customer_names.append(customer_name)
+                        vouchers_redeemed.append(code)
+            for customer_name in customer_names:
+                send_message(customer_name, REDEEMED_VOUCHER_MESSAGE)
+            frappe.response["success"] = True
+            frappe.response["message"] = "successfully updated whatsapp vouchers listed in array vouchers_redeemed"
+            frappe.response["vouchers_redeemed"] = vouchers_redeemed
+        else:
+            frappe.response["message"] = "missing codes in request body"
+            frappe.response["vouchers_redeemed"] = vouchers_redeemed
+    except KeyError:
+        frappe.response["message"] = "invalid request body"
+        frappe.response["vouchers_redeemed"] = vouchers_redeemed
+    except TypeError:
+        frappe.response["message"] = "invalid request body"
+        frappe.response["vouchers_redeemed"] = vouchers_redeemed
+
+@frappe.whitelist()
+def refund_whatsapp_vouchers():
+    frappe.response["success"] = False
+    vouchers_refunded = []
+    try:
+        if frappe.form_dict.vouchers_to_refund["codes"]:
+            for code in frappe.form_dict.vouchers_to_refund["codes"]:
+                whatsapp_vouchers = frappe.db.get_all("Whatsapp Voucher", filters={"name": code}, fields=["name", "status"])
+                if whatsapp_vouchers:
+                    if whatsapp_vouchers[0].status == "Redeemed":
+                        whatsapp_voucher = frappe.get_doc("Whatsapp Voucher", whatsapp_vouchers[0].name)
+                        whatsapp_voucher.status = "Issued"
+                        whatsapp_voucher.redeemed_at = ""
+                        whatsapp_voucher.save(ignore_permissions=True)
+                        vouchers_refunded.append(code)
+            frappe.response["success"] = True
+            frappe.response["message"] = "successfully updated Whatsapp Vouchers listed in array vouchers_refunded"
+            frappe.response["vouchers_refunded"] = vouchers_refunded
+        else:
+            frappe.response["message"] = "missing codes in request body"
+            frappe.response["vouchers_refunded"] = vouchers_refunded
+    except KeyError:
+        frappe.response["message"] = "invalid request body"
+        frappe.response["vouchers_refunded"] = vouchers_refunded
+    except TypeError:
+        frappe.response["message"] = "invalid request body"
+        frappe.response["vouchers_refunded"] = vouchers_refunded
+
+def send_follow_up_message():
+    whatsapp_vouchers_to_follow_up = frappe.db.sql("""
+        SELECT
+            wv.name AS voucher_name, cl.name AS crm_lead_id, cl.first_name AS customer_name
+        FROM `tabWhatsapp Voucher` wv
+        JOIN `tabWhatsapp Order` wo
+        ON wv.whatsapp_order = wo.name
+        JOIN `tabCRM Lead` cl
+        ON wo.crm_lead = cl.name
+        WHERE wv.redeemed_at <= DATE_SUB(NOW(), INTERVAL 2 HOUR)
+        AND done_follow_up = 0
+    """, as_dict=1)
+
+    for whatsapp_voucher in whatsapp_vouchers_to_follow_up:
+        crm_lead_doc = frappe.get_doc("CRM Lead", whatsapp_voucher.crm_lead_id)
+        send_message(crm_lead_doc, whatsapp_voucher.customer_name, FOLLOW_UP_MESSAGE)
+        whatsapp_voucher_doc = frappe.get_doc("Whatsapp Voucher", whatsapp_voucher.voucher_name)
+        whatsapp_voucher_doc.done_follow_up = 1
+        whatsapp_voucher_doc.save(ignore_permissions=True)
