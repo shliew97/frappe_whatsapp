@@ -121,9 +121,11 @@ scheduler_events = {
   "daily": [
       "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.trigger_notifications"
   ],
-  "*/5 * * * *": [
-      "healthland_dashboard.whatsapp_voucher.send_follow_up_message"
-  ],
+  "cron": {
+      "*/5 * * * *": [
+          "healthland_dashboard.whatsapp_voucher.send_follow_up_message"
+      ],
+  },
 #   "weekly": [
 #       "frappe_whatsapp.tasks.weekly"
 #   ],
