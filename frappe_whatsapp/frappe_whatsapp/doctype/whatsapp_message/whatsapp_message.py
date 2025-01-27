@@ -361,7 +361,7 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
         crm_lead_doc.action = ""
         crm_lead_doc.save(ignore_permissions=True)
         send_interactive_message(crm_lead_doc, whatsapp_id, CHOOSE_PRODUCT_MESSAGE, CHOOSE_PRODUCT_BUTTON)
-    elif "package" in interactive_id:
+    elif "voucher" in interactive_id:
         payment_url = generate_payment_url(crm_lead_doc, interactive_id.replace("-", " ").capitalize())
         send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, payment_url)
     elif "confirm-redeem-" in interactive_id and crm_lead_doc.action == "Redeem Voucher":
