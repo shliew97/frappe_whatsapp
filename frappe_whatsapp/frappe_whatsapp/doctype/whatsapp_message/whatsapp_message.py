@@ -390,7 +390,7 @@ def send_message(crm_lead_doc, whatsapp_id, text):
     whatsapp_message_reply.content_type = "text"
     whatsapp_message_reply.reference_doctype = crm_lead_doc.doctype
     whatsapp_message_reply.reference_name = crm_lead_doc.name
-    whatsapp_message_reply.message = random.choice(text)
+    whatsapp_message_reply.message = text
     whatsapp_message_reply.insert(ignore_permissions=True)
 
 def send_interactive_message(crm_lead_doc, whatsapp_id, text, buttons):
