@@ -17,7 +17,8 @@ PAYMENT_STATUS_MAPPING = {
     "22": "Pending"
 }
 
-TERMS_AND_CONDITION = "✏️ Please acknowledge with the terms and condition below before making a purchase ✏️\n\n📌 Treatment are redeemable at ALL HL outlets, except HealthLand Malacca, Sunway Velocity 2, Puchong Jaya, Premium HealthLand and Royals HealthLand.\n📌 Any voucher sold is strictly not cancellable or refundable.\n📌 Any add-ons other than the services listed herein (including any products, i.e. Balm, Aroma Oil, Herbal Patch, Steamy Eyemask) are payable by the customer.\n📌 This package is redeemable on weekday and weekend, including Public Holiday.\n📌 Package A is valid for 270 days from the date of purchase and Package B is valid for 365 days from the date of purchase.\n📌 No extension request will be granted.\n📌 Booking in advance is required through Booking Center at +6019-3199126 or +60199002633 (WhatsApp message only).\n📌 HealthLand reserves the right to change, amend, add, or delete any of the Terms and Conditions without prior notice, and the customers shall be bound by such changes. In the event of any disputes, HealthLand reserves the right to take any action necessary to resolve the dispute, and such action taken by HealthLand shall be binding, final, and conclusive."
+TERMS_AND_CONDITION_1 = "✏️ Please acknowledge with the terms and condition below before making a purchase ✏️\n\n📌 Treatment are redeemable at ALL HL outlets, except HealthLand Malacca, Sunway Velocity 2, Puchong Jaya, Premium HealthLand and Royals HealthLand.\n📌 Any voucher sold is strictly not cancellable or refundable.\n📌 Any add-ons other than the services listed herein (including any products, i.e. Balm, Aroma Oil, Herbal Patch, Steamy Eyemask) are payable by the customer.\n📌 This package is redeemable on weekday and weekend, including Public Holiday."
+TERMS_AND_CONDITION_2 = "📌 Package A is valid for 270 days from the date of purchase and Package B is valid for 365 days from the date of purchase.\n📌 No extension request will be granted.\n📌 Booking in advance is required through Booking Center at +6019-3199126 or +60199002633 (WhatsApp message only).\n📌 HealthLand reserves the right to change, amend, add, or delete any of the Terms and Conditions without prior notice, and the customers shall be bound by such changes. In the event of any disputes, HealthLand reserves the right to take any action necessary to resolve the dispute, and such action taken by HealthLand shall be binding, final, and conclusive."
 TERMS_AND_CONDITION_BUTTON = [
     {
         "type": "reply",
@@ -314,7 +315,8 @@ def handle_text_message(message, whatsapp_id, customer_name):
     if "I want to purchase" in message:
         crm_lead_doc.action = ""
         crm_lead_doc.save(ignore_permissions=True)
-        send_interactive_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION, TERMS_AND_CONDITION_BUTTON)
+        send_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_1)
+        send_interactive_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_2, TERMS_AND_CONDITION_BUTTON)
     elif "Hi, I want to redeem" in message:
         customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
@@ -329,7 +331,7 @@ def handle_text_message(message, whatsapp_id, customer_name):
     elif not message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
         send_message(crm_lead_doc, whatsapp_id, INVALID_VOUCHER_COUNT_MESSAGE)
     elif message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
-        customer_vouchers = get_customer_vouchers(whatsapp_id)
+        customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
         if len(customer_vouchers) >= int(message):
             redeem_voucher_confirmation_button = [
@@ -363,13 +365,13 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
         payment_url = generate_payment_url(crm_lead_doc, interactive_id.replace("-", " ").capitalize())
         send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, payment_url)
     elif "confirm-redeem-" in interactive_id and crm_lead_doc.action == "Redeem Voucher":
-        customer_vouchers = get_customer_vouchers(whatsapp_id)
+        customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
         voucher_list_message = "Here's your code! 🎉\nPlease show it to our front desk to redeem your hours. 😊\nFor your security, kindly keep the code private and don't share it with others. 🔒\n\n"
 
         for i in range(int(interactive_id.replace("confirm-redeem-", ""))):
             voucher_list_message += customer_vouchers[i].code
-            if i == (int(interactive_id.replace("confirm-redeem-", "")) - 1):
+            if i != (int(interactive_id.replace("confirm-redeem-", "")) - 1):
                 voucher_list_message += "\n"
 
         send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
@@ -395,7 +397,7 @@ def send_interactive_message(crm_lead_doc, whatsapp_id, text, buttons):
     whatsapp_settings = frappe.get_single("WhatsApp Settings")
 
     WHATSAPP_SEND_MESSAGE_URL = "{0}/{1}/{2}/messages".format(whatsapp_settings.url, whatsapp_settings.version, whatsapp_settings.phone_id)
-    BEARER_TOKEN = whatsapp_settings.token
+    BEARER_TOKEN = whatsapp_settings.get_password("token")
 
     request_body = {
         "messaging_product": "whatsapp",
@@ -413,15 +415,14 @@ def send_interactive_message(crm_lead_doc, whatsapp_id, text, buttons):
         }
     }
 
-    headers = {"Content-Type": "application/json", "Authorization": BEARER_TOKEN}
+    headers = {
+        "authorization": f"Bearer {BEARER_TOKEN}",
+        "content-type": "application/json",
+    }
 
     try:
-        response = make_post_request(
-            WHATSAPP_SEND_MESSAGE_URL,
-            headers=headers,
-            data=json.dumps(request_body),
-        )
-        message_id = response["messages"][0]["id"]
+        response = requests.post(WHATSAPP_SEND_MESSAGE_URL, data=json.dumps(request_body), headers=headers, timeout=5)
+        message_id = response.json()["messages"][0]["id"]
         doc = frappe.new_doc("WhatsApp Message")
         doc.update(
             {
@@ -450,7 +451,7 @@ def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, url):
     whatsapp_settings = frappe.get_single("WhatsApp Settings")
 
     WHATSAPP_SEND_MESSAGE_URL = "{0}/{1}/{2}/messages".format(whatsapp_settings.url, whatsapp_settings.version, whatsapp_settings.phone_id)
-    BEARER_TOKEN = whatsapp_settings.token
+    BEARER_TOKEN = whatsapp_settings.get_password("token")
 
     request_body = {
         "messaging_product": "whatsapp",
@@ -472,15 +473,14 @@ def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, url):
         }
     }
 
-    headers = {"Content-Type": "application/json", "Authorization": BEARER_TOKEN}
+    headers = {
+        "authorization": f"Bearer {BEARER_TOKEN}",
+        "content-type": "application/json",
+    }
 
     try:
-        response = make_post_request(
-            WHATSAPP_SEND_MESSAGE_URL,
-            headers=headers,
-            data=json.dumps(request_body),
-        )
-        message_id = response["messages"][0]["id"]
+        response = requests.post(WHATSAPP_SEND_MESSAGE_URL, data=json.dumps(request_body), headers=headers, timeout=5)
+        message_id = response.json()["messages"][0]["id"]
         doc = frappe.new_doc("WhatsApp Message")
         doc.update(
             {
@@ -515,6 +515,8 @@ def get_crm_lead(whatsapp_id, customer_name):
         crm_lead_doc.mobile_no = whatsapp_id
         crm_lead_doc.insert(ignore_permissions=True)
         reference_name = crm_lead_doc.name
+    else:
+        crm_lead_doc = frappe.get_doc("CRM Lead", reference_name)
     return crm_lead_doc
 
 def get_customer_vouchers(crm_lead):
