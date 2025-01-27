@@ -374,9 +374,9 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
             if i != (int(interactive_id.replace("confirm-redeem-", "")) - 1):
                 voucher_list_message += "\n"
 
-        send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
         crm_lead_doc.action = ""
         crm_lead_doc.save(ignore_permissions=True)
+        send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
     elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     else:
