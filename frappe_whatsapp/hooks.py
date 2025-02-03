@@ -123,7 +123,7 @@ scheduler_events = {
   ],
   "cron": {
       "*/5 * * * *": [
-          "healthland_dashboard.whatsapp_voucher.send_follow_up_message"
+          "frappe_whatsapp.scheduled_task.send_follow_up_message"
       ],
   },
 #   "weekly": [
