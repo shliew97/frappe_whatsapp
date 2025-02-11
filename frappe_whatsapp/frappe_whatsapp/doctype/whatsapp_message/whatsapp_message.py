@@ -135,6 +135,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
             if crm_lead_doc.conversation_status == "Completed":
                 crm_lead_doc.conversation_status = "New"
+                crm_lead_doc.conversation_start_at = get_datetime()
                 crm_lead_doc.save(ignore_permissions=True)
                 frappe.publish_realtime("new_leads", {})
 
