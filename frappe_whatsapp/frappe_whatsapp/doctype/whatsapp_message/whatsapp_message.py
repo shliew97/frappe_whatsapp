@@ -133,7 +133,7 @@ class WhatsAppMessage(Document):
             elif self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name and self.content_type == "flow":
                 handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"))
 
-            if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name and self.content_type == "text" and self.is_reply and self.reply_to_message_id:
+            if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name and self.content_type == "button" and self.is_reply and self.reply_to_message_id:
                 handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id)
 
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
