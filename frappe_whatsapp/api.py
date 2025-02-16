@@ -75,7 +75,7 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
                     "message_id": message_id,
                     "status": "Success",
                     "timestamp": get_datetime(),
-                    "whatsapp_message_templates": whatsapp_template_queue.name
+                    "whatsapp_message_templates": whatsapp_message_template_doc.name
                 }
             )
             doc.flags.is_template_queue = True
