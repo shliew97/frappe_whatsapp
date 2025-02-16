@@ -4,18 +4,21 @@ from frappe.integrations.utils import make_post_request
 import json
 from crm.api.whatsapp import get_lead_or_deal_from_number
 from frappe.utils.background_jobs import enqueue
-
-CUSTOMER_FEEDBACK_TEMPLATE = "🌟 Good Morning {customer_name}! 🌟\n\nIt was a pleasure serving you at {outlet} recently! 😊\nDid you enjoy your time at HealthLand?\n\n💬 We'd love to hear your thoughts!\nLooking forward to your reply! 💜"
+import time
+import json
 
 @frappe.whitelist()
-def enqueue_send_whatsapp_template():
-    enqueue(method=schedule_send_whatsapp_template, queue="long", is_async=True)
+def enqueue_send_whatsapp_template(whatsapp_message_template, whatsapp_template_queues):
+    whatsapp_template_queues = json.loads(whatsapp_template_queues)
+    whatsapp_template_queues = frappe.db.get_all("WhatsApp Template Queue", filters={"status": "Pending", "name": ["in", whatsapp_template_queues]}, fields=["name", "phone_number", "customer_name", "outlet"])
+    for whatsapp_template_queue in whatsapp_template_queues:
+        frappe.db.set_value("WhatsApp Template Queue", whatsapp_template_queue.name, "status", "In Queue", update_modified=False)
+    frappe.db.commit()
+    enqueue(method=schedule_send_whatsapp_template, whatsapp_message_template=whatsapp_message_template, whatsapp_template_queues=whatsapp_template_queues, queue="long", timeout=7200, is_async=True)
 
-def schedule_send_whatsapp_template():
-    settings = frappe.get_doc(
-        "WhatsApp Settings",
-        "WhatsApp Settings",
-    )
+def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template_queues):
+    whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", whatsapp_message_template)
+    settings = frappe.get_single("WhatsApp Settings")
     token = settings.get_password("token")
 
     headers = {
@@ -23,8 +26,12 @@ def schedule_send_whatsapp_template():
         "content-type": "application/json",
     }
 
-    whatsapp_template_queues = frappe.db.get_all("WhatsApp Template Queue", filters={"status": "Pending"}, fields=["name", "phone_number", "customer_name", "outlet"], limit=50)
     for whatsapp_template_queue in whatsapp_template_queues:
+        parameters = [{
+            "type": "text",
+            "parameter_name": whatsapp_message_template_parameter.parameter_name,
+            "text": whatsapp_template_queue.get(whatsapp_message_template_parameter.parameter_name) or ("dear customer" if whatsapp_message_template_parameter.parameter_name == "customer_name" else "")
+        } for whatsapp_message_template_parameter in whatsapp_message_template_doc.whatsapp_message_template_parameters]
         try:
             reference_name, doctype = get_lead_or_deal_from_number(whatsapp_template_queue.phone_number)
             if not reference_name:
@@ -40,23 +47,12 @@ def schedule_send_whatsapp_template():
                 "to": whatsapp_template_queue.phone_number,
                 "type": "template",
                 "template": {
-                    "name": "customer_feedback_v2",
+                    "name": whatsapp_message_template_doc.name,
                     "language": {"code": "en"},
                     "components": [
                         {
                             "type": "body",
-                            "parameters": [
-                                {
-                                    "type": "text",
-                                    "parameter_name": "customer_name",
-                                    "text": whatsapp_template_queue.customer_name or "dear customer"
-                                },
-                                {
-                                    "type": "text",
-                                    "parameter_name": "outlet",
-                                    "text": whatsapp_template_queue.outlet
-                                }
-                            ],
+                            "parameters": parameters
                         }
                     ],
                 },
@@ -73,28 +69,22 @@ def schedule_send_whatsapp_template():
                     "reference_doctype": "CRM Lead",
                     "reference_name": reference_name,
                     "message_type": "Manual",
-                    "message": CUSTOMER_FEEDBACK_TEMPLATE.format(customer_name=whatsapp_template_queue.customer_name or "dear customer", outlet=whatsapp_template_queue.outlet),
+                    "message": whatsapp_message_template_doc.message.format(customer_name=whatsapp_template_queue.customer_name or "dear customer", outlet=whatsapp_template_queue.outlet or ""),
                     "content_type": "text",
                     "to": whatsapp_template_queue.phone_number,
                     "message_id": message_id,
                     "status": "Success",
-                    "timestamp": get_datetime()
+                    "timestamp": get_datetime(),
+                    "whatsapp_message_templates": whatsapp_template_queue.name
                 }
             )
+            doc.flags.is_template_queue = True
             doc.insert(ignore_permissions=True)
             frappe.db.set_value("WhatsApp Template Queue", whatsapp_template_queue.name, "status", "Sent")
             frappe.db.commit()
+            time.sleep(3)
 
         except Exception as e:
-            # res = frappe.flags.integration_request.json()["error"]
-            # error_message = res.get("Error", res.get("message"))
-            # frappe.get_doc(
-            #     {
-            #         "doctype": "WhatsApp Notification Log",
-            #         "template": "Text Message",
-            #         "meta_data": frappe.flags.integration_request.json(),
-            #     }
-            # ).insert(ignore_permissions=True)
             frappe.db.set_value("WhatsApp Template Queue", whatsapp_template_queue.name, "status", "Failed")
             frappe.db.commit()
             frappe.log_error(title="Error", message=str(e))

@@ -25,6 +25,7 @@
   "interactive_id",
   "content_type",
   "attach",
+  "whatsapp_message_templates",
   "section_break_iyjf",
   "is_reply",
   "reply_to_message_id",
@@ -121,7 +122,8 @@
    "fieldname": "message_id",
    "fieldtype": "Data",
    "label": "Message ID",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "conversation_id",
@@ -195,11 +197,17 @@
    "fieldname": "interactive_id",
    "fieldtype": "Data",
    "label": "Interactive ID"
+  },
+  {
+   "fieldname": "whatsapp_message_templates",
+   "fieldtype": "Link",
+   "label": "WhatsApp Message Templates",
+   "options": "WhatsApp Message Templates"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-01-28 00:35:03.505660",
+ "modified": "2025-02-16 14:24:46.016178",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message",

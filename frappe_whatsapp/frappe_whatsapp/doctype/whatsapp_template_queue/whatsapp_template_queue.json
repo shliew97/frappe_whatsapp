@@ -44,12 +44,12 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nSent\nFailed"
+   "options": "Pending\nSent\nIn Queue\nFailed"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-01-23 23:56:11.763427",
+ "modified": "2025-02-16 12:12:56.631598",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Template Queue",

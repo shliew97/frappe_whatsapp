@@ -6,10 +6,11 @@ from frappe.utils import get_datetime, getdate, flt, cint
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
 import random
+import time
 import hashlib
 from crm.api.whatsapp import get_lead_or_deal_from_number
 import requests
-# from frappe.utils.background_jobs import enqueue
+from frappe.utils.background_jobs import enqueue
 
 PAYMENT_STATUS_MAPPING = {
     "00": "Completed",
@@ -128,16 +129,20 @@ class WhatsAppMessage(Document):
             # whatsapp_message_reply.insert(ignore_permissions=True)
 
             if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name and self.content_type == "text":
-                handle_text_message(self.message, self.get("from"), self.from_name)
+                handle_text_message(self.message, self.get("from"), self.get("from_name"))
             elif self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name and self.content_type == "flow":
-                handle_interactive_message(self.interactive_id, self.get("from"), self.from_name)
+                handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"))
+
+            if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name and self.content_type == "text" and self.is_reply and self.reply_to_message_id:
+                handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id)
 
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
             if crm_lead_doc.conversation_status == "Completed":
                 crm_lead_doc.conversation_status = "New"
                 crm_lead_doc.conversation_start_at = get_datetime()
                 crm_lead_doc.save(ignore_permissions=True)
-                frappe.publish_realtime("new_leads", {})
+                if not self.flags.is_template_queue:
+                    frappe.publish_realtime("new_leads", {})
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
@@ -382,6 +387,28 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     else:
         send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
+
+def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_message_id):
+    reply_to_messages = frappe.db.get_all("WhatsApp Message", filters={"message_id": reply_to_message_id}, fields=["whatsapp_message_templates"])
+    if reply_to_messages and reply_to_messages[0].whatsapp_message_templates:
+        whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", reply_to_messages[0].whatsapp_message_templates)
+        for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
+            if message == whatsapp_message_template_button.button_label:
+                crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, queue="short", is_async=True)
+                break
+
+def send_message_with_delay(crm_lead_doc, whatsapp_id, text):
+    time.sleep(3)
+    whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
+    whatsapp_message_reply.type = "Outgoing"
+    whatsapp_message_reply.to = whatsapp_id
+    whatsapp_message_reply.message_type = "Manual"
+    whatsapp_message_reply.content_type = "text"
+    whatsapp_message_reply.reference_doctype = crm_lead_doc.doctype
+    whatsapp_message_reply.reference_name = crm_lead_doc.name
+    whatsapp_message_reply.message = text
+    whatsapp_message_reply.insert(ignore_permissions=True)
 
 def send_message(crm_lead_doc, whatsapp_id, text):
     whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
