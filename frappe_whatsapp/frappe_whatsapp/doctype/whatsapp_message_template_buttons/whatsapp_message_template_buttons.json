@@ -7,7 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "button_label",
-  "reply_if_button_clicked"
+  "reply_if_button_clicked",
+  "reply_2_if_button_clicked"
  ],
  "fields": [
   {
@@ -22,12 +23,18 @@
    "fieldtype": "Long Text",
    "in_list_view": 1,
    "label": "Reply if Button Clicked"
+  },
+  {
+   "fieldname": "reply_2_if_button_clicked",
+   "fieldtype": "Long Text",
+   "in_list_view": 1,
+   "label": "Reply 2 if Button Clicked"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-02-16 11:46:40.316000",
+ "modified": "2025-02-17 06:48:25.486398",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Template Buttons",

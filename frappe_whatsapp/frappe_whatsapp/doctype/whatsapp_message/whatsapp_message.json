@@ -26,6 +26,7 @@
   "content_type",
   "attach",
   "whatsapp_message_templates",
+  "replied",
   "section_break_iyjf",
   "is_reply",
   "reply_to_message_id",
@@ -203,11 +204,17 @@
    "fieldtype": "Link",
    "label": "WhatsApp Message Templates",
    "options": "WhatsApp Message Templates"
+  },
+  {
+   "default": "0",
+   "fieldname": "replied",
+   "fieldtype": "Check",
+   "label": "Replied"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-02-16 14:24:46.016178",
+ "modified": "2025-02-17 06:44:05.848116",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message",

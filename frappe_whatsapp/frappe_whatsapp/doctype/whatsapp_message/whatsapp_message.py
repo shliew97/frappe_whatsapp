@@ -389,13 +389,15 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
         send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
 
 def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_message_id):
-    reply_to_messages = frappe.db.get_all("WhatsApp Message", filters={"message_id": reply_to_message_id}, fields=["whatsapp_message_templates"])
-    if reply_to_messages and reply_to_messages[0].whatsapp_message_templates:
+    reply_to_messages = frappe.db.get_all("WhatsApp Message", filters={"message_id": reply_to_message_id}, fields=["name", "whatsapp_message_templates", "replied"])
+    if reply_to_messages and reply_to_messages[0].whatsapp_message_templates and not reply_to_messages[0].replied:
+        frappe.db.set_value("WhatsApp Message", reply_to_messages[0].name, "replied", 1)
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", reply_to_messages[0].whatsapp_message_templates)
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
                 crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, queue="short", is_async=True)
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, queue="short", is_async=True)
                 break
 
 def send_message_with_delay(crm_lead_doc, whatsapp_id, text):
