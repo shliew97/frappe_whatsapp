@@ -40,8 +40,13 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
                 crm_lead_doc.first_name = whatsapp_template_queue.customer_name or whatsapp_template_queue.phone_number
                 crm_lead_doc.last_name = ""
                 crm_lead_doc.mobile_no = whatsapp_template_queue.phone_number
+                crm_lead_doc.whatsapp_message_templates = whatsapp_message_template
                 crm_lead_doc.insert(ignore_permissions=True)
                 reference_name = crm_lead_doc.name
+            else:
+                crm_lead_doc = frappe.get_doc(doctype, reference_name)
+                crm_lead_doc.whatsapp_message_templates = whatsapp_message_template
+                crm_lead_doc.save(ignore_permissions=True)
             data = {
                 "messaging_product": "whatsapp",
                 "to": whatsapp_template_queue.phone_number,
