@@ -203,7 +203,11 @@ def update_message_status(data):
 
 	if name:
 		doc = frappe.get_doc("WhatsApp Message", name)
-		doc.status = status
-		if conversation:
-			doc.conversation_id = conversation
-		doc.save(ignore_permissions=True)
+		if status == "failed":
+			doc.flags.ignore_permissions = True
+			doc.delete()
+		else:
+			doc.status = status
+			if conversation:
+				doc.conversation_id = conversation
+			doc.save(ignore_permissions=True)

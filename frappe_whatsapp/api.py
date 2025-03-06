@@ -93,3 +93,72 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
             frappe.db.set_value("WhatsApp Template Queue", whatsapp_template_queue.name, "status", "Failed")
             frappe.db.commit()
             frappe.log_error(title="Error", message=str(e))
+
+@frappe.whitelist()
+def send_test_message(mobile_no):
+    try:
+        frappe.response["success"] = False
+        reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
+        if not reference_name:
+            crm_lead_doc = frappe.new_doc("CRM Lead")
+            crm_lead_doc.lead_name = mobile_no
+            crm_lead_doc.first_name = mobile_no
+            crm_lead_doc.last_name = ""
+            crm_lead_doc.mobile_no = mobile_no
+            crm_lead_doc.whatsapp_message_templates = "hello_world_v2"
+            crm_lead_doc.insert(ignore_permissions=True)
+            reference_name = crm_lead_doc.name
+        else:
+            crm_lead_doc = frappe.get_doc(doctype, reference_name)
+            crm_lead_doc.whatsapp_message_templates = "hello_world_v2"
+            crm_lead_doc.save(ignore_permissions=True)
+
+        whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", "hello_world_v2")
+        settings = frappe.get_single("WhatsApp Settings")
+        token = settings.get_password("token")
+
+        headers = {
+            "authorization": f"Bearer {token}",
+            "content-type": "application/json",
+        }
+
+        data = {
+            "messaging_product": "whatsapp",
+            "to": mobile_no,
+            "type": "template",
+            "template": {
+                "name": whatsapp_message_template_doc.name,
+                "language": {"code": "en"},
+                "components": [],
+            },
+        }
+
+        response = make_post_request(
+            f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
+            headers=headers,
+            data=json.dumps(data),
+        )
+
+        message_id = response["messages"][0]["id"]
+
+        doc = frappe.new_doc("WhatsApp Message")
+        doc.update(
+            {
+                "reference_doctype": "CRM Lead",
+                "reference_name": reference_name,
+                "message_type": "Manual",
+                "message": whatsapp_message_template_doc.message,
+                "content_type": "text",
+                "to": mobile_no,
+                "message_id": message_id,
+                "status": "Success",
+                "timestamp": get_datetime(),
+                "whatsapp_message_templates": whatsapp_message_template_doc.name
+            }
+        )
+        doc.flags.is_template_queue = True
+        doc.insert(ignore_permissions=True)
+        frappe.response["success"] = True
+        frappe.response["message"] = "Message successfully sent."
+    except Exception as e:
+        frappe.response["message"] = str(e)
