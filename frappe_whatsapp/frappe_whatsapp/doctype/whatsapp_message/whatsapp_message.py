@@ -133,11 +133,15 @@ class WhatsAppMessage(Document):
             elif self.content_type == "flow":
                 handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"))
 
-            if self.content_type == "button" and self.is_reply and self.reply_to_message_id:
+            is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
+            if is_button_reply:
                 handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id)
 
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
-            if not (self.content_type == "button" and self.is_reply and self.reply_to_message_id):
+            is_crm_agent_template = False
+            if crm_lead_doc.whatsapp_message_templates:
+                is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", crm_lead_doc.whatsapp_message_templates, "is_crm_agent_template")
+            if not is_button_reply or is_crm_agent_template:
                 if crm_lead_doc.conversation_status == "Completed":
                     crm_lead_doc.conversation_status = "New"
                     crm_lead_doc.conversation_start_at = get_datetime()

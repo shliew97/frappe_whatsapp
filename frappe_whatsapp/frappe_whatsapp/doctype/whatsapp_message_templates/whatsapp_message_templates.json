@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "template_name",
+  "is_crm_agent_template",
   "message",
   "whatsapp_message_template_parameters",
   "whatsapp_message_template_buttons"
@@ -37,11 +38,20 @@
    "fieldtype": "Table",
    "label": "WhatsApp Message Template Parameters",
    "options": "WhatsApp Message Template Parameters"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_crm_agent_template",
+   "fieldtype": "Check",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Is CRM Agent Template"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-02-16 12:21:34.408238",
+ "modified": "2025-03-07 08:27:00.894630",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Templates",
