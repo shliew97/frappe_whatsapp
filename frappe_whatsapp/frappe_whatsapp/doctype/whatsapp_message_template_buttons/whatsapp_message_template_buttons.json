@@ -8,7 +8,9 @@
  "field_order": [
   "button_label",
   "reply_if_button_clicked",
-  "reply_2_if_button_clicked"
+  "reply_image",
+  "reply_2_if_button_clicked",
+  "reply_image_2"
  ],
  "fields": [
   {
@@ -22,19 +24,30 @@
    "fieldname": "reply_if_button_clicked",
    "fieldtype": "Long Text",
    "in_list_view": 1,
-   "label": "Reply if Button Clicked"
+   "label": "Reply if Button Clicked",
+   "reqd": 1
   },
   {
    "fieldname": "reply_2_if_button_clicked",
    "fieldtype": "Long Text",
    "in_list_view": 1,
    "label": "Reply 2 if Button Clicked"
+  },
+  {
+   "fieldname": "reply_image",
+   "fieldtype": "Attach Image",
+   "label": "Reply Image"
+  },
+  {
+   "fieldname": "reply_image_2",
+   "fieldtype": "Attach Image",
+   "label": "Reply Image 2"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-02-17 06:48:25.486398",
+ "modified": "2025-03-08 13:08:48.469139",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Template Buttons",
