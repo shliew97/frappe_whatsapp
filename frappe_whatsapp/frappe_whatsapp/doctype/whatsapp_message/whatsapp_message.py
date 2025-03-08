@@ -151,9 +151,10 @@ class WhatsAppMessage(Document):
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
+            crm_lead_doc.last_reply_at = get_datetime()
             if not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user):
                 crm_lead_doc.last_reply_by_user = frappe.session.user
-                crm_lead_doc.save(ignore_permissions=True)
+            crm_lead_doc.save(ignore_permissions=True)
 
     def send_template(self):
         """Send template."""
