@@ -403,10 +403,13 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
                 crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
-                if whatsapp_message_template_button.reply_image:
-                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, image=whatsapp_message_template_button.reply_image, queue="short", is_async=True)
-                else:
-                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_message_template_button.reply_whatsapp_template_if_button_clicked:
+                    enqueue(method=send_template_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_message_template=whatsapp_message_template_button.reply_whatsapp_template_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_message_template_button.reply_if_button_clicked:
+                    if whatsapp_message_template_button.reply_image:
+                        enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, image=whatsapp_message_template_button.reply_image, queue="short", is_async=True)
+                    else:
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, queue="short", is_async=True)
                 if whatsapp_message_template_button.reply_2_if_button_clicked:
                     if whatsapp_message_template_button.reply_image_2:
                         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, image=whatsapp_message_template_button.reply_image_2, queue="short", is_async=True)
@@ -438,6 +441,53 @@ def send_image_with_delay(crm_lead_doc, whatsapp_id, text, image):
     whatsapp_message_reply.message = text
     whatsapp_message_reply.attach = image
     whatsapp_message_reply.insert(ignore_permissions=True)
+
+def send_template_with_delay(crm_lead_doc, whatsapp_id, whatsapp_message_template):
+    whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", whatsapp_message_template)
+    settings = frappe.get_single("WhatsApp Settings")
+    token = settings.get_password("token")
+    headers = {
+        "authorization": f"Bearer {token}",
+        "content-type": "application/json",
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": whatsapp_id,
+        "type": "template",
+        "template": {
+            "name": whatsapp_message_template_doc.name,
+            "language": {"code": "en"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": []
+                }
+            ],
+        },
+    }
+    response = make_post_request(
+        f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
+        headers=headers,
+        data=json.dumps(data),
+    )
+    message_id = response["messages"][0]["id"]
+    doc = frappe.new_doc("WhatsApp Message")
+    doc.update(
+        {
+            "reference_doctype": "CRM Lead",
+            "reference_name": crm_lead_doc.name,
+            "message_type": "Manual",
+            "message": whatsapp_message_template_doc.message,
+            "content_type": "text",
+            "to": whatsapp_id,
+            "message_id": message_id,
+            "status": "Success",
+            "timestamp": get_datetime(),
+            "whatsapp_message_templates": whatsapp_message_template_doc.name
+        }
+    )
+    doc.flags.is_template_queue = True
+    doc.insert(ignore_permissions=True)
 
 def send_message(crm_lead_doc, whatsapp_id, text):
     whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
