@@ -99,6 +99,11 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
 def send_test_message(mobile_no):
     try:
         frappe.response["success"] = False
+        whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
+        whitelisted_numbers = [whitelisted_number.mobile_no for whitelisted_number in whatsapp_api_settings.whitelisted_number]
+        if mobile_no not in whitelisted_numbers:
+            frappe.response["message"] = "You are not allowed to send message to this number."
+            return
         reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
         if not reference_name:
             crm_lead_doc = frappe.new_doc("CRM Lead")
