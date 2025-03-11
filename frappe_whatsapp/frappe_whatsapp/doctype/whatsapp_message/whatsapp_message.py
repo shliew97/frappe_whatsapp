@@ -141,7 +141,7 @@ class WhatsAppMessage(Document):
             is_crm_agent_template = False
             if crm_lead_doc.whatsapp_message_templates:
                 is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", crm_lead_doc.whatsapp_message_templates, "is_crm_agent_template")
-            if not is_button_reply or is_crm_agent_template:
+            if (not is_button_reply and self.content_type != "flow") or is_crm_agent_template:
                 if crm_lead_doc.conversation_status == "Completed":
                     crm_lead_doc.conversation_status = "New"
                     crm_lead_doc.conversation_start_at = get_datetime()
