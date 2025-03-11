@@ -471,19 +471,8 @@ def send_interaction_with_delay(crm_lead_doc, whatsapp_id, whatsapp_interaction_
             }
         })
 
-    header = {}
-
-    if whatsapp_interaction_message_template_doc.header_image:
-        header = {
-            "type": "image",
-            "image": {
-                "link": frappe.utils.get_url() + "/" + whatsapp_interaction_message_template_doc.header_image
-            }
-        }
-
     interactive = {
         "type": "button",
-        "header": header,
         "body": {
             "text": whatsapp_interaction_message_template_doc.message
         },
@@ -491,6 +480,14 @@ def send_interaction_with_delay(crm_lead_doc, whatsapp_id, whatsapp_interaction_
             "buttons": buttons
         }
     }
+
+    if whatsapp_interaction_message_template_doc.header_image:
+        interactive["header"] = {
+            "type": "image",
+            "image": {
+                "link": frappe.utils.get_url() + "/" + whatsapp_interaction_message_template_doc.header_image
+            }
+        }
 
     data = {
         "messaging_product": "whatsapp",
