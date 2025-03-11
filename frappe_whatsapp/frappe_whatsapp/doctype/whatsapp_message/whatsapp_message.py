@@ -366,6 +366,10 @@ def handle_text_message(message, whatsapp_id, customer_name):
             send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
         else:
             send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
+    else:
+        text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, pluck="whatsapp_interaction_message_templates")
+        if text_auto_replies:
+            enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=text_auto_replies[0], queue="short", is_async=True)
 
 def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
     crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
