@@ -462,7 +462,7 @@ def send_interaction_with_delay(crm_lead_doc, whatsapp_id, whatsapp_interaction_
 
     buttons = []
 
-    for button in whatsapp_interaction_message_template_doc.whatsapp_message_template_buttons:
+    for button in whatsapp_interaction_message_template_doc.whatsapp_interaction_message_template_buttons:
         buttons.append({
             "type": "reply",
             "reply": {
