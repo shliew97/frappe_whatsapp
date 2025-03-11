@@ -370,6 +370,8 @@ def handle_text_message(message, whatsapp_id, customer_name):
 def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
     crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
 
+    whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
+
     if interactive_id == "accept-tnc":
         crm_lead_doc.action = ""
         crm_lead_doc.save(ignore_permissions=True)
@@ -392,6 +394,17 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
         send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
     elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
+    elif whatsapp_interaction_message_template_buttons:
+        if whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked:
+            if whatsapp_interaction_message_template_buttons[0].reply_image:
+                enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked, image=whatsapp_interaction_message_template_buttons[0].reply_image, queue="short", is_async=True)
+            else:
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked, queue="short", is_async=True)
+        if whatsapp_interaction_message_template_buttons[0].reply_2_if_button_clicked:
+            if whatsapp_interaction_message_template_buttons[0].reply_image_2:
+                enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_buttons[0].reply_2_if_button_clicked, image=whatsapp_interaction_message_template_buttons[0].reply_image_2, queue="short", is_async=True)
+            else:
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_buttons[0].reply_2_if_button_clicked, queue="short", is_async=True)
     else:
         send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
 
@@ -403,8 +416,6 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
                 crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
-                if whatsapp_message_template_button.reply_whatsapp_template_if_button_clicked:
-                    enqueue(method=send_template_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_message_template=whatsapp_message_template_button.reply_whatsapp_template_if_button_clicked, queue="short", is_async=True)
                 if whatsapp_message_template_button.reply_if_button_clicked:
                     if whatsapp_message_template_button.reply_image:
                         enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, image=whatsapp_message_template_button.reply_image, queue="short", is_async=True)
@@ -415,6 +426,8 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
                         enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, image=whatsapp_message_template_button.reply_image_2, queue="short", is_async=True)
                     else:
                         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked:
+                    enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_message_template=whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked, queue="short", is_async=True)
                 break
 
 def send_message_with_delay(crm_lead_doc, whatsapp_id, text):
@@ -437,28 +450,54 @@ def send_image(crm_lead_doc, whatsapp_id, text, image):
     whatsapp_message_reply.attach = image
     whatsapp_message_reply.insert(ignore_permissions=True)
 
-def send_template_with_delay(crm_lead_doc, whatsapp_id, whatsapp_message_template):
-    whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", whatsapp_message_template)
+def send_interaction_with_delay(crm_lead_doc, whatsapp_id, whatsapp_interaction_message_template):
+    time.sleep(3)
+    whatsapp_interaction_message_template_doc = frappe.get_doc("WhatsApp Interaction Message Templates", whatsapp_interaction_message_template)
     settings = frappe.get_single("WhatsApp Settings")
     token = settings.get_password("token")
     headers = {
         "authorization": f"Bearer {token}",
         "content-type": "application/json",
     }
+
+    buttons = []
+
+    for button in whatsapp_interaction_message_template_doc.whatsapp_message_template_buttons:
+        buttons.append({
+            "type": "reply",
+            "reply": {
+                "id": button.reply_id,
+                "title": button.button_label 
+            }
+        })
+
+    header = {}
+
+    if whatsapp_interaction_message_template_doc.header_image:
+        header = {
+            "type": "image",
+            "image": {
+                "link": frappe.utils.get_url() + "/" + whatsapp_interaction_message_template_doc.header_image
+            }
+        }
+
+    interactive = {
+        "type": "button",
+        "header": header,
+        "body": {
+            "text": whatsapp_interaction_message_template_doc.message
+        },
+        "action": {
+            "buttons": buttons
+        }
+    }
+
     data = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": whatsapp_id,
-        "type": "template",
-        "template": {
-            "name": whatsapp_message_template_doc.name,
-            "language": {"code": "en"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": []
-                }
-            ],
-        },
+        "type": "interactive",
+        "interactive": interactive
     }
     response = make_post_request(
         f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
@@ -472,13 +511,12 @@ def send_template_with_delay(crm_lead_doc, whatsapp_id, whatsapp_message_templat
             "reference_doctype": "CRM Lead",
             "reference_name": crm_lead_doc.name,
             "message_type": "Manual",
-            "message": whatsapp_message_template_doc.message,
+            "message": whatsapp_interaction_message_template_doc.message,
             "content_type": "text",
             "to": whatsapp_id,
             "message_id": message_id,
             "status": "Success",
             "timestamp": get_datetime(),
-            "whatsapp_message_templates": whatsapp_message_template_doc.name
         }
     )
     doc.flags.is_template_queue = True
