@@ -367,7 +367,7 @@ def handle_text_message(message, whatsapp_id, customer_name):
         else:
             send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
     else:
-        text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["whatsapp_message_templates", "whatsapp_interaction_message_templates"])
+        text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["whatsapp_message_templates", "whatsapp_interaction_message_templates", "reply_if_button_clicked", "reply_image", "reply_2_if_button_clicked", "reply_image_2"])
         if text_auto_replies:
             if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
                 crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
