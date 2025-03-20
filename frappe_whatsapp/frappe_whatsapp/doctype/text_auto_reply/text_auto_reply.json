@@ -10,6 +10,10 @@
   "whatsapp_message_templates",
   "disabled",
   "keyword",
+  "reply_if_button_clicked",
+  "reply_image",
+  "reply_2_if_button_clicked",
+  "reply_image_2",
   "whatsapp_interaction_message_templates"
  ],
  "fields": [
@@ -51,11 +55,31 @@
    "label": "WhatsApp Message Templates",
    "options": "WhatsApp Message Templates",
    "reqd": 1
+  },
+  {
+   "fieldname": "reply_if_button_clicked",
+   "fieldtype": "Long Text",
+   "label": "Reply if Button Clicked"
+  },
+  {
+   "fieldname": "reply_image",
+   "fieldtype": "Attach Image",
+   "label": "Reply Image"
+  },
+  {
+   "fieldname": "reply_2_if_button_clicked",
+   "fieldtype": "Long Text",
+   "label": "Reply 2 if Button Clicked"
+  },
+  {
+   "fieldname": "reply_image_2",
+   "fieldtype": "Attach Image",
+   "label": "Reply Image 2"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-12 09:12:52.975206",
+ "modified": "2025-03-20 09:04:28.113456",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Text Auto Reply",

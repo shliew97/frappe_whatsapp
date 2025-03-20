@@ -369,9 +369,21 @@ def handle_text_message(message, whatsapp_id, customer_name):
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["whatsapp_message_templates", "whatsapp_interaction_message_templates"])
         if text_auto_replies:
-            crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
-            crm_lead_doc.save(ignore_permissions=True)
-            enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
+            if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
+                crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
+                crm_lead_doc.save(ignore_permissions=True)
+            if text_auto_replies.reply_if_button_clicked:
+                if text_auto_replies.reply_image:
+                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
+                else:
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, queue="short", is_async=True)
+            if text_auto_replies.reply_2_if_button_clicked:
+                if text_auto_replies.reply_image_2:
+                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, image=text_auto_replies[0].reply_image_2, queue="short", is_async=True)
+                else:
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
+            if text_auto_replies[0].whatsapp_interaction_message_templates:
+                enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
 
 def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
     crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
