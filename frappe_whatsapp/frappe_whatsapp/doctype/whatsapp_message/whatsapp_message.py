@@ -372,13 +372,13 @@ def handle_text_message(message, whatsapp_id, customer_name):
             if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
                 crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
                 crm_lead_doc.save(ignore_permissions=True)
-            if text_auto_replies.reply_if_button_clicked:
-                if text_auto_replies.reply_image:
+            if text_auto_replies[0].reply_if_button_clicked:
+                if text_auto_replies[0].reply_image:
                     enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
                 else:
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, queue="short", is_async=True)
-            if text_auto_replies.reply_2_if_button_clicked:
-                if text_auto_replies.reply_image_2:
+            if text_auto_replies[0].reply_2_if_button_clicked:
+                if text_auto_replies[0].reply_image_2:
                     enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, image=text_auto_replies[0].reply_image_2, queue="short", is_async=True)
                 else:
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
