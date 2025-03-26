@@ -170,7 +170,8 @@ def send_test_message(mobile_no):
         frappe.response["message"] = str(e)
 
 @frappe.whitelist()
-def send_template_message(mobile_no, template):
+def send_template_message(mobile_no, template, parameters):
+    parameters = json.loads(parameters)
     try:
         frappe.response["success"] = False
         reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
@@ -197,6 +198,24 @@ def send_template_message(mobile_no, template):
             "content-type": "application/json",
         }
 
+        components = []
+
+        request_body_parameters = []
+
+        if parameters:
+            request_body_parameters = [{
+                "type": "text",
+                "parameter_name": parameter["parameter_name"],
+                "text": parameter["text"],
+            } for parameter in parameters]
+
+            components = [
+                {
+                    "type": "body",
+                    "parameters": request_body_parameters
+                }
+            ]
+
         data = {
             "messaging_product": "whatsapp",
             "to": mobile_no,
@@ -204,7 +223,7 @@ def send_template_message(mobile_no, template):
             "template": {
                 "name": whatsapp_message_template_doc.name,
                 "language": {"code": "en"},
-                "components": [],
+                "components": components
             },
         }
 
