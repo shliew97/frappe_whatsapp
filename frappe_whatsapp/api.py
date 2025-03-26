@@ -268,10 +268,10 @@ def send_template_message(mobile_no, template, parameters):
 
 @frappe.whitelist()
 def register_webhook(url):
-    frappe.message["success"] = False
+    frappe.response["success"] = False
 
     if not is_valid_https_url(url):
-        frappe.message["message"] = "Please register webhook with a valid URL supporting https."
+        frappe.response["message"] = "Please register webhook with a valid URL supporting https."
         return
 
     whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
@@ -286,8 +286,8 @@ def register_webhook(url):
         whatsapp_api_settings.current_callback_webhook = callback_webhook_doc.name
         whatsapp_api_settings.save(ignore_permissions=True)
 
-    frappe.message["success"] = True
-    frappe.message["message"] = "Successfully registered webhook."
+    frappe.response["success"] = True
+    frappe.response["message"] = "Successfully registered webhook."
 
 def is_valid_https_url(url):
     pattern = r"^https:\/\/[a-zA-Z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+$"
