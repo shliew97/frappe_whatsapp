@@ -171,7 +171,8 @@ def send_test_message(mobile_no):
 
 @frappe.whitelist()
 def send_template_message(mobile_no, template, parameters):
-    parameters = json.loads(parameters)
+    if isinstance(parameters, str):
+        parameters = json.loads(parameters)
     try:
         frappe.response["success"] = False
         reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
@@ -235,13 +236,17 @@ def send_template_message(mobile_no, template, parameters):
 
         message_id = response["messages"][0]["id"]
 
+        param_dict = {p["parameter_name"]: p["text"] for p in parameters}
+
+        message = whatsapp_message_template_doc.message.format(**param_dict)
+
         doc = frappe.new_doc("WhatsApp Message")
         doc.update(
             {
                 "reference_doctype": "CRM Lead",
                 "reference_name": reference_name,
                 "message_type": "Manual",
-                "message": whatsapp_message_template_doc.message,
+                "message": message,
                 "content_type": "text",
                 "to": mobile_no,
                 "message_id": message_id,
