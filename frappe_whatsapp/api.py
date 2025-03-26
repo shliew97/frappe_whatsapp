@@ -6,6 +6,7 @@ from crm.api.whatsapp import get_lead_or_deal_from_number
 from frappe.utils.background_jobs import enqueue
 import time
 import json
+import re
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message, send_image as _send_image
 
 @frappe.whitelist()
@@ -267,6 +268,12 @@ def send_template_message(mobile_no, template, parameters):
 
 @frappe.whitelist()
 def register_webhook(url):
+    frappe.message["success"] = False
+
+    if not is_valid_https_url(url):
+        frappe.message["message"] = "Please register webhook with a valid URL supporting https."
+        return
+
     whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
     callback_webhook = frappe.db.get_all("WhatsApp Message Callback Webhook", filters={"url": url}, pluck="name")
     if callback_webhook:
@@ -278,6 +285,13 @@ def register_webhook(url):
         callback_webhook_doc.insert(ignore_permissions=True)
         whatsapp_api_settings.current_callback_webhook = callback_webhook_doc.name
         whatsapp_api_settings.save(ignore_permissions=True)
+
+    frappe.message["success"] = True
+    frappe.message["message"] = "Successfully registered webhook."
+
+def is_valid_https_url(url):
+    pattern = r"^https:\/\/[a-zA-Z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+$"
+    return bool(re.match(pattern, url))
 
 @frappe.whitelist()
 def send_message(mobile_no, message):
