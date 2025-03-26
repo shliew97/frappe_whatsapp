@@ -240,6 +240,8 @@ def send_template_message(mobile_no, template, parameters):
 
         message = whatsapp_message_template_doc.message.format(**param_dict)
 
+        whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
+
         doc = frappe.new_doc("WhatsApp Message")
         doc.update(
             {
@@ -252,7 +254,8 @@ def send_template_message(mobile_no, template, parameters):
                 "message_id": message_id,
                 "status": "Success",
                 "timestamp": get_datetime(),
-                "whatsapp_message_templates": whatsapp_message_template_doc.name
+                "whatsapp_message_templates": whatsapp_message_template_doc.name,
+                "callback_webhook": whatsapp_api_settings.current_callback_webhook,
             }
         )
         doc.flags.is_template_queue = True
@@ -261,6 +264,20 @@ def send_template_message(mobile_no, template, parameters):
         frappe.response["message"] = "Message successfully sent."
     except Exception as e:
         frappe.response["message"] = str(e)
+
+@frappe.whitelist()
+def register_webhook(url):
+    whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
+    callback_webhook = frappe.db.get_all("WhatsApp Message Callback Webhook", filters={"url": url}, pluck="name")
+    if callback_webhook:
+        whatsapp_api_settings.current_callback_webhook = callback_webhook[0]
+        whatsapp_api_settings.save(ignore_permissions=True)
+    else:
+        callback_webhook_doc = frappe.new_doc("WhatsApp Message Callback Webhook")
+        callback_webhook_doc.url = url
+        callback_webhook_doc.insert(ignore_permissions=True)
+        whatsapp_api_settings.current_callback_webhook = callback_webhook_doc.name
+        whatsapp_api_settings.save(ignore_permissions=True)
 
 @frappe.whitelist()
 def send_message(mobile_no, message):

@@ -1,42 +1,38 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2025-03-11 07:47:17.501611",
+ "creation": "2025-03-27 07:49:27.064498",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "whitelisted_number",
-  "current_callback_webhook"
+  "url"
  ],
  "fields": [
   {
-   "fieldname": "whitelisted_number",
-   "fieldtype": "Table",
-   "label": "Whitelisted Number",
-   "options": "Whitelisted Number"
-  },
-  {
-   "fieldname": "current_callback_webhook",
-   "fieldtype": "Link",
-   "label": "Current Callback Webhook",
-   "options": "WhatsApp Message Callback Webhook"
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "URL",
+   "options": "URL",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
- "issingle": 1,
  "links": [],
- "modified": "2025-03-27 07:50:41.435602",
+ "modified": "2025-03-27 07:49:45.556184",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
- "name": "WhatsApp API Settings",
+ "name": "WhatsApp Message Callback Webhook",
  "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
    "delete": 1,
    "email": 1,
+   "export": 1,
    "print": 1,
    "read": 1,
+   "report": 1,
    "role": "System Manager",
    "share": 1,
    "write": 1

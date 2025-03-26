@@ -27,6 +27,7 @@
   "attach",
   "whatsapp_message_templates",
   "replied",
+  "callback_webhook",
   "section_break_iyjf",
   "is_reply",
   "reply_to_message_id",
@@ -210,11 +211,17 @@
    "fieldname": "replied",
    "fieldtype": "Check",
    "label": "Replied"
+  },
+  {
+   "fieldname": "callback_webhook",
+   "fieldtype": "Link",
+   "label": "Callback Webhook",
+   "options": "WhatsApp Message Callback Webhook"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-02-17 06:44:05.848116",
+ "modified": "2025-03-27 07:49:55.113292",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message",
