@@ -291,9 +291,12 @@ def register_webhook(url):
 
 @frappe.whitelist()
 def unregister_current_webhook(url):
+    frappe.response["success"] = False
     whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
     whatsapp_api_settings.current_callback_webhook = None
     whatsapp_api_settings.save(ignore_permissions=True)
+    frappe.response["success"] = True
+    frappe.response["message"] = "Successfully unregistered current webhook."
 
 def is_valid_https_url(url):
     pattern = r"^https:\/\/[a-zA-Z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+$"
