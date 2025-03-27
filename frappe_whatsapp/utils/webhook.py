@@ -211,3 +211,15 @@ def update_message_status(data):
 			if conversation:
 				doc.conversation_id = conversation
 			doc.save(ignore_permissions=True)
+
+		whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
+		if whatsapp_api_settings.current_callback_webhook:
+			current_callback_webhook = frappe.get_doc("WhatsApp Message Callback Webhook", whatsapp_api_settings.current_callback_webhook)
+			headers = {"Content-Type": "application/json"}  # Set headers if needed
+			try:
+				response = requests.post(current_callback_webhook.url, json=data, headers=headers, timeout=3)
+				response.raise_for_status()  # Raise an error for HTTP errors (4xx, 5xx)
+			except requests.Timeout:
+				pass
+			except requests.RequestException as e:
+				pass

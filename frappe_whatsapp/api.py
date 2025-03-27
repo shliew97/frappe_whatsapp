@@ -241,8 +241,6 @@ def send_template_message(mobile_no, template, parameters):
 
         message = whatsapp_message_template_doc.message.format(**param_dict)
 
-        whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
-
         doc = frappe.new_doc("WhatsApp Message")
         doc.update(
             {
@@ -256,7 +254,6 @@ def send_template_message(mobile_no, template, parameters):
                 "status": "Success",
                 "timestamp": get_datetime(),
                 "whatsapp_message_templates": whatsapp_message_template_doc.name,
-                "callback_webhook": whatsapp_api_settings.current_callback_webhook,
             }
         )
         doc.flags.is_template_queue = True
