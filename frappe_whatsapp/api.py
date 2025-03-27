@@ -290,7 +290,7 @@ def register_webhook(url):
     frappe.response["message"] = "Successfully registered webhook."
 
 @frappe.whitelist()
-def unregister_current_webhook(url):
+def unregister_current_webhook():
     frappe.response["success"] = False
     whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
     whatsapp_api_settings.current_callback_webhook = None
