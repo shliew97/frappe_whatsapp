@@ -10,11 +10,17 @@
   "whatsapp_message_templates",
   "disabled",
   "keyword",
+  "reply_1_section",
   "reply_if_button_clicked",
   "reply_image",
+  "reply_2_section",
   "reply_2_if_button_clicked",
   "reply_image_2",
-  "whatsapp_interaction_message_templates"
+  "reply_interaction_section",
+  "whatsapp_interaction_message_templates",
+  "working_and_booking_hours_section",
+  "send_out_of_working_hours_message",
+  "send_out_of_booking_hours_message"
  ],
  "fields": [
   {
@@ -75,11 +81,43 @@
    "fieldname": "reply_image_2",
    "fieldtype": "Attach Image",
    "label": "Reply Image 2"
+  },
+  {
+   "fieldname": "reply_1_section",
+   "fieldtype": "Section Break",
+   "label": "Reply 1"
+  },
+  {
+   "fieldname": "reply_2_section",
+   "fieldtype": "Section Break",
+   "label": "Reply 2"
+  },
+  {
+   "fieldname": "reply_interaction_section",
+   "fieldtype": "Section Break",
+   "label": "Reply Interaction"
+  },
+  {
+   "default": "0",
+   "fieldname": "send_out_of_working_hours_message",
+   "fieldtype": "Check",
+   "label": "Send Out of Working Hours Message"
+  },
+  {
+   "default": "0",
+   "fieldname": "send_out_of_booking_hours_message",
+   "fieldtype": "Check",
+   "label": "Send Out of Booking Hours Message"
+  },
+  {
+   "fieldname": "working_and_booking_hours_section",
+   "fieldtype": "Section Break",
+   "label": "Working and Booking Hours"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-20 09:04:28.113456",
+ "modified": "2025-04-08 08:31:00.430609",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Text Auto Reply",

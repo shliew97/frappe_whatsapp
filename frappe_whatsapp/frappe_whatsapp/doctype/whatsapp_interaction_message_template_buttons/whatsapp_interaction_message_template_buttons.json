@@ -9,10 +9,15 @@
  "field_order": [
   "button_label",
   "reply_id",
+  "reply_1_section",
   "reply_if_button_clicked",
   "reply_image",
+  "reply_2",
   "reply_2_if_button_clicked",
-  "reply_image_2"
+  "reply_image_2",
+  "working_and_booking_hours_section",
+  "send_out_of_working_hours_message",
+  "send_out_of_booking_hours_message"
  ],
  "fields": [
   {
@@ -55,12 +60,39 @@
    "label": "Reply ID",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "reply_1_section",
+   "fieldtype": "Section Break",
+   "label": "Reply 1"
+  },
+  {
+   "fieldname": "reply_2",
+   "fieldtype": "Section Break",
+   "label": "Reply 2"
+  },
+  {
+   "fieldname": "working_and_booking_hours_section",
+   "fieldtype": "Section Break",
+   "label": "Working and Booking Hours"
+  },
+  {
+   "default": "0",
+   "fieldname": "send_out_of_working_hours_message",
+   "fieldtype": "Check",
+   "label": "Send Out of Working Hours Message"
+  },
+  {
+   "default": "0",
+   "fieldname": "send_out_of_booking_hours_message",
+   "fieldtype": "Check",
+   "label": "Send Out of Booking Hours Message"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-03-11 08:10:25.168113",
+ "modified": "2025-04-08 08:31:32.820529",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Interaction Message Template Buttons",
