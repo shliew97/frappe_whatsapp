@@ -17,7 +17,9 @@
   "reply_image_2",
   "working_and_booking_hours_section",
   "send_out_of_working_hours_message",
-  "send_out_of_booking_hours_message"
+  "send_out_of_booking_hours_message",
+  "assignment_section",
+  "whatsapp_message_templates"
  ],
  "fields": [
   {
@@ -87,12 +89,23 @@
    "fieldname": "send_out_of_booking_hours_message",
    "fieldtype": "Check",
    "label": "Send Out of Booking Hours Message"
+  },
+  {
+   "fieldname": "assignment_section",
+   "fieldtype": "Section Break",
+   "label": "Assignment"
+  },
+  {
+   "fieldname": "whatsapp_message_templates",
+   "fieldtype": "Link",
+   "label": "WhatsApp Message Templates",
+   "options": "WhatsApp Message Templates"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-04-08 08:31:32.820529",
+ "modified": "2025-04-09 07:11:42.164693",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Interaction Message Template Buttons",

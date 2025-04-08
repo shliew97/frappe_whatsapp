@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 import json
 import frappe
-from frappe.utils import get_datetime, getdate, flt, cint
+from frappe.utils import get_datetime, getdate, flt, cint, add_to_date
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
 import random
@@ -116,6 +116,10 @@ class WhatsAppMessage(Document):
             self.send_template()
 
     def after_insert(self):
+        publish = False
+
+        crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
+
         if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name:
             # whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
             # whatsapp_message_reply.type = "Outgoing"
@@ -140,7 +144,6 @@ class WhatsAppMessage(Document):
             if is_button_reply:
                 handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id)
 
-            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
             is_crm_agent_template = False
             if crm_lead_doc.whatsapp_message_templates:
                 is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", crm_lead_doc.whatsapp_message_templates, "is_crm_agent_template")
@@ -148,16 +151,18 @@ class WhatsAppMessage(Document):
                 if crm_lead_doc.conversation_status == "Completed":
                     crm_lead_doc.conversation_status = "New"
                     crm_lead_doc.conversation_start_at = get_datetime()
-                    crm_lead_doc.save(ignore_permissions=True)
                     if not self.flags.is_template_queue:
-                        frappe.publish_realtime("new_leads", {})
+                        publish = True
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
-            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
-            crm_lead_doc.last_reply_at = get_datetime()
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
-            crm_lead_doc.save(ignore_permissions=True)
+
+        crm_lead_doc.last_reply_at = get_datetime()
+        crm_lead_doc.save(ignore_permissions=True)
+
+        if publish:
+            frappe.publish_realtime("new_leads", {})
 
     def send_template(self):
         """Send template."""
@@ -391,7 +396,7 @@ def handle_text_message(message, whatsapp_id, customer_name):
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
             if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
-        elif crm_lead_doc.conversation_status == "Completed":
+        elif crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1):
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
             if text_auto_replies:
                 if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
@@ -442,6 +447,9 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
     elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     elif whatsapp_interaction_message_template_buttons:
+        if whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates:
+            crm_lead_doc.whatsapp_message_templates = whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates
+            crm_lead_doc.save(ignore_permissions=True)
         if whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked:
             if whatsapp_interaction_message_template_buttons[0].reply_image:
                 enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked, image=whatsapp_interaction_message_template_buttons[0].reply_image, queue="short", is_async=True)
