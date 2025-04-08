@@ -6,6 +6,7 @@ from frappe.utils import get_datetime, getdate, flt, cint
 from frappe.model.document import Document
 from frappe.integrations.utils import make_post_request
 import random
+import datetime
 import time
 import hashlib
 from crm.api.whatsapp import get_lead_or_deal_from_number
@@ -879,8 +880,8 @@ def is_not_within_operating_hours():
     current_datetime = get_datetime()
 
     # Define time range
-    start = time(9, 0)   # 9:00 AM
-    end = time(17, 0)    # 5:00 PM
+    start = datetime.time(9, 0)   # 9:00 AM
+    end = datetime.time(17, 0)    # 5:00 PM
 
     # Check if current time is within range
     if start <= current_datetime.time() <= end:
@@ -892,8 +893,8 @@ def is_not_within_booking_hours():
     current_datetime = get_datetime()
 
     # Define time range
-    start = time(10, 0)   # 10:00 AM
-    end = time(21, 0)    # 9:00 PM
+    start = datetime.time(10, 0)   # 10:00 AM
+    end = datetime.time(21, 0)    # 9:00 PM
 
     # Check if current time is within range
     if start <= current_datetime.time() <= end:
