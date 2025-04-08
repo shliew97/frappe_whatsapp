@@ -386,7 +386,7 @@ def handle_text_message(message, whatsapp_id, customer_name):
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
             if text_auto_replies[0].whatsapp_interaction_message_templates:
                 enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
-        else:
+        elif crm_lead_doc.conversation_status == "Completed":
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
             if text_auto_replies:
                 if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
