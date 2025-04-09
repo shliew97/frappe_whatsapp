@@ -116,10 +116,6 @@ class WhatsAppMessage(Document):
             self.send_template()
 
     def after_insert(self):
-        publish = False
-
-        crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
-
         if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name:
             # whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
             # whatsapp_message_reply.type = "Outgoing"
@@ -144,6 +140,7 @@ class WhatsAppMessage(Document):
             if is_button_reply:
                 handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id)
 
+            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
             is_crm_agent_template = False
             if crm_lead_doc.whatsapp_message_templates:
                 is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", crm_lead_doc.whatsapp_message_templates, "is_crm_agent_template")
@@ -151,19 +148,18 @@ class WhatsAppMessage(Document):
                 if crm_lead_doc.conversation_status == "Completed":
                     crm_lead_doc.conversation_status = "New"
                     crm_lead_doc.conversation_start_at = get_datetime()
+                    crm_lead_doc.save(ignore_permissions=True)
                     if not self.flags.is_template_queue:
-                        publish = True
+                        frappe.publish_realtime("new_leads", {})
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
+            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
+            crm_lead_doc.save(ignore_permissions=True)
 
-        crm_lead_doc.reload()
-        crm_lead_doc.last_reply_at = get_datetime()
-        crm_lead_doc.save(ignore_permissions=True)
-
-        if publish:
-            frappe.publish_realtime("new_leads", {})
+        if self.reference_name:
+            frappe.db.set_value("CRM Lead", self.reference_name, "last_reply_at", get_datetime())
 
     def send_template(self):
         """Send template."""
