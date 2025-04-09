@@ -67,6 +67,7 @@ DO_NOT_UNDERSTAND_MESSAGE = "Opps I cannot understand you."
 
 OUT_OF_WORKING_HOURS_MESSAGE = "Hello! 😊 Thanks for reaching out!\n\n📅 Our working hours: 9 AM - 5 PM (Monday - Friday). While we're currently unavailable, drop us a message, and we'll get back to you ASAP!\n\n💡 Want to check out our latest deals or make a purchase? Click the link below for exciting offers! 🎉👇\n\nhttps://book.healthland.com.my/privatelink/nojokepwp\n\nThank you for your patience & support! 💜"
 OUT_OF_BOOKING_HOURS_MESSAGE = "Hello! 😊 Thanks for reaching out!\n\n📅 Our booking hours: 10 AM - 9 PM. While we're currently unavailable, leave us a message, and we'll get back to you ASAP!\n\n💡 Need to book now? Try our Online Booking System for a fast & hassle-free experience! 🚀\n👉 Book here: https://book.healthland.com.my/booking/selectshop\n\nThank you for your patience & understanding! 💜"
+OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nHave you already booked your slot through our new online system?\n\nIf not, don't worry—we're here to help! Just fill in the details below, and we'll assist you shortly 💬\n\n🚀 Introducing Our NEW Online Booking System! 🚀\n💡 Secure your slot in less than 1 MINUTE! No more waiting—book instantly here:\n🔗 Book Now:  https://book.healthland.com.my/booking/selectshop\n📋 Kindly provide the info below:\nName:\nContact No.:\nOutlet:\nDate:\nTime:\nNo. of Pax:\nTreatment:\nDuration (60min/90min/120min):\nPreferred Masseur (male/female):\nFave/Bonuslink/Coup/Member\nPackage:"
 
 class WhatsAppMessage(Document):
     """Send whats app messages."""
@@ -116,6 +117,7 @@ class WhatsAppMessage(Document):
             self.send_template()
 
     def after_insert(self):
+        crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
         if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name:
             # whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
             # whatsapp_message_reply.type = "Outgoing"
@@ -132,15 +134,18 @@ class WhatsAppMessage(Document):
             # whatsapp_message_reply.insert(ignore_permissions=True)
 
             if self.content_type == "text":
-                handle_text_message(self.message, self.get("from"), self.get("from_name"))
+                handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
             elif self.content_type == "flow":
-                handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"))
+                handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
 
             is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
             if is_button_reply:
-                handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id)
+                handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
 
-            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
+            crm_lead_doc.reload()
+            crm_lead_doc.last_reply_at = get_datetime()
+            crm_lead_doc.save(ignore_permissions=True)
+
             is_crm_agent_template = False
             if crm_lead_doc.whatsapp_message_templates:
                 is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", crm_lead_doc.whatsapp_message_templates, "is_crm_agent_template")
@@ -153,13 +158,11 @@ class WhatsAppMessage(Document):
                         frappe.publish_realtime("new_leads", {})
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
-            crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
+            crm_lead_doc.reload()
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
+            crm_lead_doc.last_reply_at = get_datetime()
             crm_lead_doc.save(ignore_permissions=True)
-
-        if self.reference_name:
-            frappe.db.set_value("CRM Lead", self.reference_name, "last_reply_at", get_datetime())
 
     def send_template(self):
         """Send template."""
@@ -327,8 +330,9 @@ def calculate_md5(input_string):
     md5_result = md5_hash.hexdigest()
     return md5_result
 
-def handle_text_message(message, whatsapp_id, customer_name):
-    crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
+    if not crm_lead_doc:
+        crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
 
     if "I want to purchase" in message:
         crm_lead_doc.action = ""
@@ -416,8 +420,9 @@ def handle_text_message(message, whatsapp_id, customer_name):
                 if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
 
-def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
-    crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_lead_doc=None):
+    if not crm_lead_doc:
+        crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
 
@@ -464,14 +469,15 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name):
     else:
         send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
 
-def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_message_id):
+def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_message_id, crm_lead_doc=None):
     reply_to_messages = frappe.db.get_all("WhatsApp Message", filters={"message_id": reply_to_message_id}, fields=["name", "whatsapp_message_templates", "replied"])
     if reply_to_messages and reply_to_messages[0].whatsapp_message_templates and not reply_to_messages[0].replied:
         frappe.db.set_value("WhatsApp Message", reply_to_messages[0].name, "replied", 1)
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", reply_to_messages[0].whatsapp_message_templates)
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
-                crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+                if not crm_lead_doc:
+                    crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
                 if whatsapp_message_template_button.reply_if_button_clicked:
                     if whatsapp_message_template_button.reply_image:
                         enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, image=whatsapp_message_template_button.reply_image, queue="short", is_async=True)
