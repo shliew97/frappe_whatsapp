@@ -158,6 +158,7 @@ class WhatsAppMessage(Document):
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
 
+        crm_lead_doc.reload()
         crm_lead_doc.last_reply_at = get_datetime()
         crm_lead_doc.save(ignore_permissions=True)
 
