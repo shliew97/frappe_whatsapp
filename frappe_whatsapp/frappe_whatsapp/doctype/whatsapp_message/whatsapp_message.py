@@ -144,6 +144,8 @@ class WhatsAppMessage(Document):
 
             crm_lead_doc.reload()
             crm_lead_doc.last_reply_at = get_datetime()
+            crm_lead_doc.last_message_from_me = False
+            crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.save(ignore_permissions=True)
 
             is_crm_agent_template = False
@@ -162,6 +164,7 @@ class WhatsAppMessage(Document):
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
             crm_lead_doc.last_reply_at = get_datetime()
+            crm_lead_doc.last_message_from_me = True
             crm_lead_doc.save(ignore_permissions=True)
 
     def send_template(self):
@@ -402,7 +405,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                     "crm_lead": crm_lead_doc.name
                 }).insert(ignore_permissions=True)
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
-        elif crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1):
+        elif not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1):
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
             if text_auto_replies:
                 if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
@@ -937,3 +940,6 @@ def send_booking_follow_up():
     for booking_follow_up in booking_follow_ups:
         enqueue(method=send_message_with_delay, crm_lead_doc=frappe.get_doc("CRM Lead", booking_follow_up.crm_lead), whatsapp_id=booking_follow_up.whatsapp_id, text=OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE, queue="short", is_async=True)
     frappe.db.truncate("Booking Follow Up")
+
+def send_chat_closing_reminder():
+    crm_leads = frappe.db.get_all("CRM Lead", filters={"sent_chat_closing_reminder": 0, "last_message_from_me": 1})
