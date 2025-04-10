@@ -144,6 +144,7 @@ class WhatsAppMessage(Document):
 
             crm_lead_doc.reload()
             crm_lead_doc.last_reply_at = get_datetime()
+            crm_lead_doc.chat_close_at = add_to_date(get_datetime(), days=1)
             crm_lead_doc.last_message_from_me = False
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.save(ignore_permissions=True)
@@ -462,8 +463,14 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
     elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     elif whatsapp_interaction_message_template_buttons:
+        should_save = False
         if whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates:
             crm_lead_doc.whatsapp_message_templates = whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates
+            should_save = True
+        if whatsapp_interaction_message_template_buttons[0].tagging:
+            crm_lead_doc.tagging = whatsapp_interaction_message_template_buttons[0].tagging
+            should_save = True
+        if should_save:
             crm_lead_doc.save(ignore_permissions=True)
         if whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked:
             if whatsapp_interaction_message_template_buttons[0].reply_image:
