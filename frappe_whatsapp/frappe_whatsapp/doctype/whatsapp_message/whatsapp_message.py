@@ -398,7 +398,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
             if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
                 frappe.get_doc({
                     "doctype": "Booking Follow Up",
-                    "mobile_no": whatsapp_id,
+                    "whatsapp_id": whatsapp_id,
                     "crm_lead": crm_lead_doc.name
                 }).insert(ignore_permissions=True)
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
@@ -425,7 +425,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                 if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
                     frappe.get_doc({
                         "doctype": "Booking Follow Up",
-                        "mobile_no": whatsapp_id,
+                        "whatsapp_id": whatsapp_id,
                         "crm_lead": crm_lead_doc.name
                     }).insert(ignore_permissions=True)
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
@@ -477,7 +477,7 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
         if whatsapp_interaction_message_template_buttons[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
             frappe.get_doc({
                 "doctype": "Booking Follow Up",
-                "mobile_no": whatsapp_id,
+                "whatsapp_id": whatsapp_id,
                 "crm_lead": crm_lead_doc.name
             }).insert(ignore_permissions=True)
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
