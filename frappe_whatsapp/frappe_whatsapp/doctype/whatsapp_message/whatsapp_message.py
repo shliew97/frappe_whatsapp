@@ -69,6 +69,8 @@ OUT_OF_WORKING_HOURS_MESSAGE = "Hello! 😊 Thanks for reaching out!\n\n📅 Our
 OUT_OF_BOOKING_HOURS_MESSAGE = "Hello! 😊 Thanks for reaching out!\n\n📅 Our booking hours: 10 AM - 9 PM. While we're currently unavailable, leave us a message, and we'll get back to you ASAP!\n\n💡 Need to book now? Try our Online Booking System for a fast & hassle-free experience! 🚀\n👉 Book here: https://book.healthland.com.my/booking/selectshop\n\nThank you for your patience & understanding! 💜"
 OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nHave you already booked your slot through our new online system?\n\nIf not, don't worry—we're here to help! Just fill in the details below, and we'll assist you shortly 💬\n\n🚀 Introducing Our NEW Online Booking System! 🚀\n💡 Secure your slot in less than 1 MINUTE! No more waiting—book instantly here:\n🔗 Book Now:  https://book.healthland.com.my/booking/selectshop\n📋 Kindly provide the info below:\nName:\nContact No.:\nOutlet:\nDate:\nTime:\nNo. of Pax:\nTreatment:\nDuration (60min/90min/120min):\nPreferred Masseur (male/female):\nFave/Bonuslink/Coup/Member\nPackage:"
 
+CHAT_CLOSING_MESSAGE = "🌟 Hello Dear Customer! 🌟\n\nJust a quick reminder — our chat will automatically close in 24 hours if there's no reply from you. 💬\n\nWe'd love to assist you, so feel free to reply anytime. Have any questions about making a purchase? We're here for you! 😊💜\n\nLooking forward to hearing from you soon! 💬✨"
+
 class WhatsAppMessage(Document):
     """Send whats app messages."""
 
@@ -144,7 +146,7 @@ class WhatsAppMessage(Document):
 
             crm_lead_doc.reload()
             crm_lead_doc.last_reply_at = get_datetime()
-            crm_lead_doc.chat_close_at = add_to_date(get_datetime(), days=1)
+            crm_lead_doc.chat_close_at = add_to_date(get_datetime(), hours=22)
             crm_lead_doc.last_message_from_me = False
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.save(ignore_permissions=True)
@@ -949,4 +951,7 @@ def send_booking_follow_up():
     frappe.db.truncate("Booking Follow Up")
 
 def send_chat_closing_reminder():
-    crm_leads = frappe.db.get_all("CRM Lead", filters={"sent_chat_closing_reminder": 0, "last_message_from_me": 1})
+    crm_leads = frappe.db.get_all("CRM Lead", filters={"sent_chat_closing_reminder": 0, "last_message_from_me": 1, "chat_close_at": ["<=", get_datetime()]}, fields=["name", "mobile_no"])
+    for crm_lead in crm_leads:
+        if crm_lead.mobile_no:
+            enqueue(method=send_message_with_delay, crm_lead_doc=frappe.get_doc("CRM Lead", crm_lead.name), whatsapp_id=crm_lead.mobile_no, text=CHAT_CLOSING_MESSAGE, queue="short", is_async=True)

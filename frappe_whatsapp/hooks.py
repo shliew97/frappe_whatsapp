@@ -127,6 +127,7 @@ scheduler_events = {
   "cron": {
       "*/5 * * * *": [
           "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_follow_up_message",
+          "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_chat_closing_reminder",
           "frappe_whatsapp.scheduled_task.send_noficiation_for_new_crm_leads"
       ],
       "0 10 * * *": [
