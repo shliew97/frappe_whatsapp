@@ -954,4 +954,7 @@ def send_chat_closing_reminder():
     crm_leads = frappe.db.get_all("CRM Lead", filters={"sent_chat_closing_reminder": 0, "last_message_from_me": 1, "chat_close_at": ["<=", get_datetime()]}, fields=["name", "mobile_no"])
     for crm_lead in crm_leads:
         if crm_lead.mobile_no:
-            enqueue(method=send_message_with_delay, crm_lead_doc=frappe.get_doc("CRM Lead", crm_lead.name), whatsapp_id=crm_lead.mobile_no, text=CHAT_CLOSING_MESSAGE, queue="short", is_async=True)
+            crm_lead_doc = frappe.get_doc("CRM Lead", crm_lead.name)
+            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=crm_lead.mobile_no, text=CHAT_CLOSING_MESSAGE, queue="short", is_async=True)
+            crm_lead_doc.sent_chat_closing_reminder = True
+            crm_lead_doc.save(ignore_permissions=True)
