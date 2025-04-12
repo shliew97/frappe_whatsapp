@@ -951,7 +951,7 @@ def send_booking_follow_up():
     frappe.db.truncate("Booking Follow Up")
 
 def send_chat_closing_reminder():
-    crm_leads = frappe.db.get_all("CRM Lead", filters={"sent_chat_closing_reminder": 0, "last_message_from_me": 1, "chat_close_at": ["<=", get_datetime()]}, fields=["name", "mobile_no"])
+    crm_leads = frappe.db.get_all("CRM Lead", filters={"sent_chat_closing_reminder": 0, "last_message_from_me": 1, "conversation_status": ["!=", "Completed"], "chat_close_at": ["<=", get_datetime()]}, fields=["name", "mobile_no"])
     for crm_lead in crm_leads:
         if crm_lead.mobile_no:
             crm_lead_doc = frappe.get_doc("CRM Lead", crm_lead.name)
