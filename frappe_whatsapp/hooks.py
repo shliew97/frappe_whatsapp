@@ -130,7 +130,7 @@ scheduler_events = {
           "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_chat_closing_reminder",
           "frappe_whatsapp.scheduled_task.send_noficiation_for_new_crm_leads"
       ],
-      "0 10 * * *": [
+      "45 8 * * *": [
           "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_booking_follow_up"
       ],
   },
