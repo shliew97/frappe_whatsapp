@@ -8,6 +8,7 @@
  "field_order": [
   "auto_reply_name",
   "whatsapp_message_templates",
+  "tagging",
   "disabled",
   "keyword",
   "reply_1_section",
@@ -113,11 +114,17 @@
    "fieldname": "working_and_booking_hours_section",
    "fieldtype": "Section Break",
    "label": "Working and Booking Hours"
+  },
+  {
+   "fieldname": "tagging",
+   "fieldtype": "Select",
+   "label": "Tagging",
+   "options": "\nBooking - Action Required\nPromotion"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-08 08:31:00.430609",
+ "modified": "2025-04-18 09:12:45.435141",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Text Auto Reply",

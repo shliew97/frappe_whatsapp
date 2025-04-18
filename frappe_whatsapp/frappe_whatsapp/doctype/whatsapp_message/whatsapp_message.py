@@ -386,8 +386,14 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         if not text_auto_replies and "book" in message.lower():
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
-            if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
+            should_save = False
+            if text_auto_replies[0].whatsapp_message_templates and crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
                 crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
+                should_save = True
+            if text_auto_replies[0].tagging and crm_lead_doc.tagging != text_auto_replies[0].tagging:
+                crm_lead_doc.tagging = text_auto_replies[0].tagging
+                should_save = True
+            if should_save:
                 crm_lead_doc.save(ignore_permissions=True)
             if text_auto_replies[0].reply_if_button_clicked and (text_auto_replies[0].name != "BookingHL" or (text_auto_replies[0].name == "BookingHL" and not is_not_within_booking_hours())):
                 if text_auto_replies[0].reply_image:
@@ -468,10 +474,10 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     elif whatsapp_interaction_message_template_buttons:
         should_save = False
-        if whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates:
+        if whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates and crm_lead_doc.whatsapp_message_templates != whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates:
             crm_lead_doc.whatsapp_message_templates = whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates
             should_save = True
-        if whatsapp_interaction_message_template_buttons[0].tagging:
+        if whatsapp_interaction_message_template_buttons[0].tagging and crm_lead_doc.tagging != whatsapp_interaction_message_template_buttons[0].tagging:
             crm_lead_doc.tagging = whatsapp_interaction_message_template_buttons[0].tagging
             should_save = True
         if should_save:
