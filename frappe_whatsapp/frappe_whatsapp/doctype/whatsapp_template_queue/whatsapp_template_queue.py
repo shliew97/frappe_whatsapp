@@ -6,4 +6,6 @@ from frappe.model.document import Document
 
 
 class WhatsAppTemplateQueue(Document):
-	pass
+	def before_insert(self):
+		self.phone_number = self.phone_number.strip()
+		self.customer_name = self.customer_name.strip()
