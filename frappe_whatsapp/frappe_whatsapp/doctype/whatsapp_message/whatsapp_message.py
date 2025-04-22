@@ -151,7 +151,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.save(ignore_permissions=True)
 
-            if (not is_button_reply and self.content_type != "flow"):
+            if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_update_status):
                 publish = False
                 existing_open_assignments = frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead_doc.name, "status": ["!=", "Case Closed"]}, fields=["*"])
 
@@ -415,6 +415,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         elif not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1):
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
             if text_auto_replies:
+                frappe.flags.skip_lead_status_update = True
                 create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
                 create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
                 if text_auto_replies[0].reply_if_button_clicked:
