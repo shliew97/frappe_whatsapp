@@ -959,6 +959,8 @@ def get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates):
     return frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead, "whatsapp_message_templates": whatsapp_message_templates}, pluck="name")
 
 def create_crm_lead_assignment(crm_lead, whatsapp_message_templates, status=None):
+    if not whatsapp_message_templates:
+        return
     is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", whatsapp_message_templates, "is_crm_agent_template")
     existing_crm_lead_assignments = get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates)
     if existing_crm_lead_assignments:
@@ -978,6 +980,8 @@ def get_existing_crm_taggings(crm_lead, tagging):
     return frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead, "tagging": tagging}, pluck="name")
 
 def create_crm_tagging_assignment(crm_lead, tagging, status=None):
+    if not tagging:
+        return
     existing_crm_taggings = get_existing_crm_taggings(crm_lead, tagging)
     if existing_crm_taggings:
         for existing_crm_tagging in existing_crm_taggings:
