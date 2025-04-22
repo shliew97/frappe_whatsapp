@@ -151,16 +151,19 @@ class WhatsAppMessage(Document):
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.save(ignore_permissions=True)
 
-            is_crm_agent_template = False
-            if crm_lead_doc.whatsapp_message_templates:
-                is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", crm_lead_doc.whatsapp_message_templates, "is_crm_agent_template")
-            if (not is_button_reply and self.content_type != "flow") or is_crm_agent_template:
-                if crm_lead_doc.conversation_status == "Completed":
-                    crm_lead_doc.conversation_status = "New"
+            if (not is_button_reply and self.content_type != "flow"):
+                publish = False
+                existing_open_assignments = frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead_doc.name, "status": ["!=", "Case Closed"]}, fields=["*"])
+
+                for existing_open_assignment in existing_open_assignments:
+                    if existing_open_assignment.status == "Completed":
+                        publish = True
+                        frappe.db.set_value("CRM Lead Assignment", existing_open_assignment.name, "status", "New")
+
+                if not self.flags.is_template_queue and publish:
                     crm_lead_doc.conversation_start_at = get_datetime()
                     crm_lead_doc.save(ignore_permissions=True)
-                    if not self.flags.is_template_queue:
-                        frappe.publish_realtime("new_leads", {})
+                    frappe.publish_realtime("new_leads", {})
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc.reload()
@@ -386,15 +389,8 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         if not text_auto_replies and "book" in message.lower():
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
-            should_save = False
-            if text_auto_replies[0].whatsapp_message_templates and crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
-                crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
-                should_save = True
-            if text_auto_replies[0].tagging and crm_lead_doc.tagging != text_auto_replies[0].tagging:
-                crm_lead_doc.tagging = text_auto_replies[0].tagging
-                should_save = True
-            if should_save:
-                crm_lead_doc.save(ignore_permissions=True)
+            create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
+            create_crm_tagging_assignment(crm_lead_doc.name, text_auto_replies[0].tagging)
             if text_auto_replies[0].reply_if_button_clicked and (text_auto_replies[0].name != "BookingHL" or (text_auto_replies[0].name == "BookingHL" and not is_not_within_booking_hours())):
                 if text_auto_replies[0].reply_image:
                     enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
@@ -419,9 +415,8 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         elif not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1):
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
             if text_auto_replies:
-                if crm_lead_doc.whatsapp_message_templates != text_auto_replies[0].whatsapp_message_templates:
-                    crm_lead_doc.whatsapp_message_templates = text_auto_replies[0].whatsapp_message_templates
-                    crm_lead_doc.save(ignore_permissions=True)
+                create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
+                create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
                 if text_auto_replies[0].reply_if_button_clicked:
                     if text_auto_replies[0].reply_image:
                         enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
@@ -473,15 +468,8 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
     elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     elif whatsapp_interaction_message_template_buttons:
-        should_save = False
-        if whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates and crm_lead_doc.whatsapp_message_templates != whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates:
-            crm_lead_doc.whatsapp_message_templates = whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates
-            should_save = True
-        if whatsapp_interaction_message_template_buttons[0].tagging and crm_lead_doc.tagging != whatsapp_interaction_message_template_buttons[0].tagging:
-            crm_lead_doc.tagging = whatsapp_interaction_message_template_buttons[0].tagging
-            should_save = True
-        if should_save:
-            crm_lead_doc.save(ignore_permissions=True)
+        create_crm_lead_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates)
+        create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_buttons[0].tagging)
         if whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked and (interactive_id != "book-appointment" or (interactive_id == "book-appointment" and not is_not_within_booking_hours())):
             if whatsapp_interaction_message_template_buttons[0].reply_image:
                 enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked, image=whatsapp_interaction_message_template_buttons[0].reply_image, queue="short", is_async=True)
@@ -966,3 +954,43 @@ def send_chat_closing_reminder():
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=crm_lead.mobile_no, text=CHAT_CLOSING_MESSAGE, queue="short", is_async=True)
             crm_lead_doc.sent_chat_closing_reminder = True
             crm_lead_doc.save(ignore_permissions=True)
+
+def get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates):
+    return frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead, "whatsapp_message_templates": whatsapp_message_templates}, pluck="name")
+
+def create_crm_lead_assignment(crm_lead, whatsapp_message_templates, status=None):
+    is_crm_agent_template = frappe.db.get_value("WhatsApp Message Templates", whatsapp_message_templates, "is_crm_agent_template")
+    existing_crm_lead_assignments = get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates)
+    if existing_crm_lead_assignments:
+        for existing_crm_lead_assignment in existing_crm_lead_assignments:
+            frappe.db.set_value("CRM Lead Assignment", existing_crm_lead_assignment, {
+                "status": status or ("New" if is_crm_agent_template else "Completed"),
+            })
+    else:
+        frappe.get_doc({
+            "doctype": "CRM Lead Assignment",
+            "crm_lead": crm_lead,
+            "whatsapp_message_templates": whatsapp_message_templates,
+            "status": status or ("New" if is_crm_agent_template else "Completed"),
+        }).insert(ignore_permissions=True)
+
+def get_existing_crm_taggings(crm_lead, tagging):
+    return frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead, "tagging": tagging}, pluck="name")
+
+def create_crm_tagging_assignment(crm_lead, tagging, status=None):
+    existing_crm_taggings = get_existing_crm_taggings(crm_lead, tagging)
+    if existing_crm_taggings:
+        for existing_crm_tagging in existing_crm_taggings:
+            frappe.db.set_value("CRM Lead Tagging", existing_crm_tagging, "status", status if status else "Open")
+    else:
+        frappe.get_doc({
+            "doctype": "CRM Lead Tagging",
+            "crm_lead": crm_lead,
+            "tagging": tagging
+        }).insert(ignore_permissions=True)
+
+    if tagging != "Unknown":
+        frappe.db.delete("CRM Lead Tagging", filters={
+            "crm_lead": crm_lead,
+            "tagging": "Unknown"
+        })

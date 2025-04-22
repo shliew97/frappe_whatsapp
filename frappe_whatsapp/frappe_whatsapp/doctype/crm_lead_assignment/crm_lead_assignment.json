@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-20 21:34:19.713358",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_le1w",
+  "crm_lead",
+  "whatsapp_message_templates",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_le1w",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "crm_lead",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "CRM Lead",
+   "options": "CRM Lead",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "whatsapp_message_templates",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "WhatsApp Message Templates",
+   "options": "WhatsApp Message Templates",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Completed",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "New\nAccepted\nCompleted\nCase Closed",
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-04-22 07:58:19.090880",
+ "modified_by": "Administrator",
+ "module": "Frappe Whatsapp",
+ "name": "CRM Lead Assignment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "CRM Agent"
+  },
+  {
+   "read": 1,
+   "role": "Master Agent"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Green",
+   "title": "Completed"
+  },
+  {
+   "color": "Orange",
+   "title": "New"
+  },
+  {
+   "color": "Blue",
+   "title": "Accepted"
+  }
+ ]
+}

@@ -50,15 +50,16 @@
    "label": "Is CRM Agent Template"
   },
   {
+   "default": "Unknown",
    "fieldname": "tagging",
    "fieldtype": "Select",
    "label": "Tagging",
-   "options": "\nBooking - Action Required\nPromotion"
+   "options": "Unknown\nBooking - Action Required\nPromotion"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-11 07:37:10.711322",
+ "modified": "2025-04-20 22:03:32.147500",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Templates",
