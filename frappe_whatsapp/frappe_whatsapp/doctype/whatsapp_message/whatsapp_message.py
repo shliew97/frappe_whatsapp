@@ -167,6 +167,9 @@ class WhatsAppMessage(Document):
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc.reload()
+            if "CRM Admin" in frappe.get_roles():
+                crm_lead_doc.alert = False
+                crm_lead_doc.alert_by = None
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
             crm_lead_doc.last_reply_at = get_datetime()
