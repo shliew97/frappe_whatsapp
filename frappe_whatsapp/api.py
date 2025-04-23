@@ -7,7 +7,7 @@ from frappe.utils.background_jobs import enqueue
 import time
 import json
 import re
-from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message, send_image as _send_image
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message, send_image as _send_image, create_crm_lead_assignment, create_crm_tagging_assignment
 
 @frappe.whitelist()
 def enqueue_send_whatsapp_template(whatsapp_message_template, whatsapp_template_queues):
@@ -42,15 +42,15 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
                 crm_lead_doc.first_name = whatsapp_template_queue.customer_name or whatsapp_template_queue.phone_number
                 crm_lead_doc.last_name = ""
                 crm_lead_doc.mobile_no = whatsapp_template_queue.phone_number
-                crm_lead_doc.tagging = whatsapp_message_template_doc.tagging
-                crm_lead_doc.whatsapp_message_templates = whatsapp_message_template
                 crm_lead_doc.insert(ignore_permissions=True)
                 reference_name = crm_lead_doc.name
             else:
                 crm_lead_doc = frappe.get_doc(doctype, reference_name)
-                crm_lead_doc.tagging = whatsapp_message_template_doc.tagging
-                crm_lead_doc.whatsapp_message_templates = whatsapp_message_template
                 crm_lead_doc.save(ignore_permissions=True)
+
+            create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template)
+            create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_message_template_doc.tagging)
+
             data = {
                 "messaging_product": "whatsapp",
                 "to": whatsapp_template_queue.phone_number,
