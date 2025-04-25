@@ -992,8 +992,7 @@ def create_crm_lead_assignment(crm_lead, whatsapp_message_templates, status=None
     if existing_crm_lead_assignments:
         for existing_crm_lead_assignment in existing_crm_lead_assignments:
             frappe.db.set_value("CRM Lead Assignment", existing_crm_lead_assignment, {
-                "status": status or ("New" if is_crm_agent_template else "Completed"),
-                "accepted_by": None
+                "status": status or ("New" if is_crm_agent_template else "Completed")
             })
     else:
         frappe.get_doc({
