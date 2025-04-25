@@ -8,7 +8,8 @@
   "section_break_le1w",
   "crm_lead",
   "whatsapp_message_templates",
-  "status"
+  "status",
+  "accepted_by"
  ],
  "fields": [
   {
@@ -44,11 +45,17 @@
    "label": "Status",
    "options": "New\nAccepted\nCompleted\nCase Closed",
    "search_index": 1
+  },
+  {
+   "fieldname": "accepted_by",
+   "fieldtype": "Link",
+   "label": "Accepted By",
+   "options": "User"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-22 07:58:19.090880",
+ "modified": "2025-04-25 22:47:45.393950",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "CRM Lead Assignment",

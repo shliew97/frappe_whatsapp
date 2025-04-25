@@ -11,7 +11,7 @@ def whatsapp_template_query(user):
         return ""
 
     if "Booking Centre" in user_roles:
-        users = get_users_with_role("CRM Assignee")
+        users = get_users_with_role("Booking Centre")
         return """`tabWhatsApp Templates`.owner IN ({0}) """.format(",".join(frappe.db.escape(user) for user in users[0]))
 
     return """`tabWhatsApp Templates`.owner = "{0}" """.format(user)

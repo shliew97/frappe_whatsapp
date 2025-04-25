@@ -151,14 +151,17 @@ class WhatsAppMessage(Document):
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.save(ignore_permissions=True)
 
-            if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_update_status):
+            if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_lead_status_update):
                 publish = False
                 existing_open_assignments = frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead_doc.name, "status": ["!=", "Case Closed"]}, fields=["*"])
 
                 for existing_open_assignment in existing_open_assignments:
                     if existing_open_assignment.status == "Completed":
                         publish = True
-                        frappe.db.set_value("CRM Lead Assignment", existing_open_assignment.name, "status", "New")
+                        frappe.db.set_value("CRM Lead Assignment", existing_open_assignment.name, {
+                            "status": "New",
+                            "accepted_by": None
+                        })
 
                 if not self.flags.is_template_queue and publish:
                     crm_lead_doc.conversation_start_at = get_datetime()
@@ -389,7 +392,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
             send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["*"])
-        if not text_auto_replies and "book" in message.lower():
+        if not text_auto_replies and "book" in message.lower() and len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0:
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
             create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
@@ -951,13 +954,32 @@ def send_booking_follow_up():
     frappe.db.truncate("Booking Follow Up")
 
 def send_chat_closing_reminder():
-    crm_leads = frappe.db.get_all("CRM Lead", filters={"whatsapp_message_templates": ["!=", "BookingHL"], "sent_chat_closing_reminder": 0, "last_message_from_me": 1, "conversation_status": ["!=", "Completed"], "chat_close_at": ["<=", get_datetime()]}, fields=["name", "mobile_no"])
+    unclosed_crm_leads = frappe.db.get_all("CRM Lead Assignment", filters={"whatsapp_message_templates": ["!=", "BookingHL"], "status": ["!=", "Case Closed"]}, pluck="crm_lead")
+    unclosed_crm_leads = list(set(unclosed_crm_leads))
+    crm_leads = frappe.db.get_all("CRM Lead", filters={"name": ["in", unclosed_crm_leads], "sent_chat_closing_reminder": 0, "last_message_from_me": 1, "chat_close_at": ["<=", get_datetime()]}, fields=["name", "mobile_no"])
     for crm_lead in crm_leads:
         if crm_lead.mobile_no:
             crm_lead_doc = frappe.get_doc("CRM Lead", crm_lead.name)
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=crm_lead.mobile_no, text=CHAT_CLOSING_MESSAGE, queue="short", is_async=True)
             crm_lead_doc.sent_chat_closing_reminder = True
             crm_lead_doc.save(ignore_permissions=True)
+
+    unclosed_crm_leads = frappe.db.get_all("CRM Lead Assignment", filters={"status": "Completed"}, pluck="crm_lead")
+    unclosed_crm_leads = list(set(unclosed_crm_leads))
+    if unclosed_crm_leads:
+        crm_leads = frappe.db.get_all("CRM Lead", filters={"name": ["in", unclosed_crm_leads], "chat_close_at": ["<=", add_to_date(get_datetime(), hours=-2)]}, fields=["name", "mobile_no"])
+        if crm_leads:
+            crm_leads_to_close = frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": ["in", crm_leads], "status": "Completed"}, pluck="name")
+            for crm_lead_to_close in crm_leads_to_close:
+                frappe.db.set_value("CRM Lead Assignment", crm_lead_to_close, {
+                    "status": "Case Closed",
+                    "accepted_by": None
+                })
+            taggings_to_close = frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": ["in", crm_leads], "status": "Open"}, pluck="name")
+            for tagging_to_close in taggings_to_close:
+                frappe.db.set_value("CRM Lead Tagging", tagging_to_close, {
+                    "status": "Closed"
+                })
 
 def get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates):
     return frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead, "whatsapp_message_templates": whatsapp_message_templates}, pluck="name")
@@ -971,6 +993,7 @@ def create_crm_lead_assignment(crm_lead, whatsapp_message_templates, status=None
         for existing_crm_lead_assignment in existing_crm_lead_assignments:
             frappe.db.set_value("CRM Lead Assignment", existing_crm_lead_assignment, {
                 "status": status or ("New" if is_crm_agent_template else "Completed"),
+                "accepted_by": None
             })
     else:
         frappe.get_doc({
@@ -979,6 +1002,12 @@ def create_crm_lead_assignment(crm_lead, whatsapp_message_templates, status=None
             "whatsapp_message_templates": whatsapp_message_templates,
             "status": status or ("New" if is_crm_agent_template else "Completed"),
         }).insert(ignore_permissions=True)
+
+    if whatsapp_message_templates != "automated_message":
+        frappe.db.delete("CRM Lead Assignment", filters={
+            "crm_lead": crm_lead,
+            "whatsapp_message_templates": "automated_message"
+        })
 
 def get_existing_crm_taggings(crm_lead, tagging):
     return frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead, "tagging": tagging}, pluck="name")
