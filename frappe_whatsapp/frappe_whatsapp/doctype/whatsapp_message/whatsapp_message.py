@@ -395,6 +395,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         if not text_auto_replies and "book" in message.lower() and len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0:
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
+            frappe.flags.skip_lead_status_update = True
             create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
             create_crm_tagging_assignment(crm_lead_doc.name, text_auto_replies[0].tagging)
             if text_auto_replies[0].reply_if_button_clicked and (text_auto_replies[0].name != "BookingHL" or (text_auto_replies[0].name == "BookingHL" and not is_not_within_booking_hours())):
