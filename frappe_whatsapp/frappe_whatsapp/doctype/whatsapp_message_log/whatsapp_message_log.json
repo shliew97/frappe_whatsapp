@@ -13,22 +13,26 @@
   {
    "fieldname": "from",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "From"
   },
   {
    "fieldname": "message",
    "fieldtype": "HTML Editor",
+   "in_list_view": 1,
    "label": "Message"
   },
   {
    "fieldname": "timestamp",
    "fieldtype": "Datetime",
+   "in_list_view": 1,
    "label": "Timestamp"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-05-07 07:54:25.906156",
+ "modified": "2025-05-07 08:23:34.711092",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Log",

@@ -189,7 +189,7 @@ class WhatsAppMessage(Document):
                     "date" in self.message.lower() and "time" in self.message.lower()
                 ]
 
-                if any(keywords) and (len(open_unknown_taggings) > 1 or len(open_promotion_taggings) > 1):
+                if any(keywords) and (len(open_unknown_taggings) > 0 or len(open_promotion_taggings) > 0):
                     frappe.get_doc({
                         "doctype": "WhatsApp Message Log",
                         "from": crm_lead_doc.mobile_no,
