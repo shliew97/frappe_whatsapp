@@ -39,12 +39,13 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Open\nClosed"
+   "options": "Open\nClosed",
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-21 00:22:03.050869",
+ "modified": "2025-05-07 07:57:00.341819",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "CRM Lead Tagging",

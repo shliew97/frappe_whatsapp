@@ -168,6 +168,35 @@ class WhatsAppMessage(Document):
                     crm_lead_doc.save(ignore_permissions=True)
                     frappe.publish_realtime("new_leads", {})
 
+            if self.content_type == "text":
+                if self.message is None:
+                    self.message = ""
+
+                open_unknown_taggings = frappe.db.get_all(
+                    "CRM Lead Tagging",
+                    filters={"crm_lead": crm_lead_doc.name, "tagging": "Unknown", "status": "Open"},
+                    pluck="name"
+                )
+                open_promotion_taggings = frappe.db.get_all(
+                    "CRM Lead Tagging",
+                    filters={"crm_lead": crm_lead_doc.name, "tagging": "Promotion", "status": "Open"},
+                    pluck="name"
+                )
+
+                keywords = [
+                    "book" in self.message.lower(),
+                    "slot" in self.message.lower(),
+                    "date" in self.message.lower() and "time" in self.message.lower()
+                ]
+
+                if any(keywords) and (len(open_unknown_taggings) > 1 or len(open_promotion_taggings) > 1):
+                    frappe.get_doc({
+                        "doctype": "WhatsApp Message Log",
+                        "from": crm_lead_doc.mobile_no,
+                        "message": self.message,
+                        "timestamp": self.timestamp,
+                    }).insert(ignore_permissions=True)
+
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             crm_lead_doc.reload()
             if "CRM Admin" in frappe.get_roles():
