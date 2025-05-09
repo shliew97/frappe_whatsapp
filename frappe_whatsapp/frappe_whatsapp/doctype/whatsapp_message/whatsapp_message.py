@@ -562,6 +562,8 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
             if message == whatsapp_message_template_button.button_label:
                 if not crm_lead_doc:
                     crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+                create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template_doc.name)
+                create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_message_template_doc.tagging)
                 if whatsapp_message_template_button.reply_if_button_clicked:
                     if whatsapp_message_template_button.reply_image:
                         enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, image=whatsapp_message_template_button.reply_image, queue="short", is_async=True)
