@@ -200,15 +200,10 @@ class WhatsAppMessage(Document):
                 if self.message is None:
                     self.message = ""
 
-                open_unknown_taggings = frappe.db.get_all(
+                open_taggings = frappe.db.get_all(
                     "CRM Lead Tagging",
-                    filters={"crm_lead": crm_lead_doc.name, "tagging": "Unknown", "status": "Open"},
-                    pluck="name"
-                )
-                open_promotion_taggings = frappe.db.get_all(
-                    "CRM Lead Tagging",
-                    filters={"crm_lead": crm_lead_doc.name, "tagging": "Promotion", "status": "Open"},
-                    pluck="name"
+                    filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
+                    pluck="tagging"
                 )
 
                 keywords = [
@@ -217,11 +212,12 @@ class WhatsAppMessage(Document):
                     "date" in self.message.lower() and "time" in self.message.lower()
                 ]
 
-                if any(keywords) and (len(open_unknown_taggings) > 0 or len(open_promotion_taggings) > 0):
+                if any(keywords) and len(open_taggings) > 0:
                     frappe.get_doc({
                         "doctype": "WhatsApp Message Log",
                         "from": crm_lead_doc.mobile_no,
                         "message": self.message,
+                        "tagging": ", ".join(open_taggings),
                         "timestamp": self.timestamp,
                     }).insert(ignore_permissions=True)
 

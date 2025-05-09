@@ -7,6 +7,7 @@
  "field_order": [
   "from",
   "message",
+  "tagging",
   "timestamp"
  ],
  "fields": [
@@ -28,11 +29,16 @@
    "fieldtype": "Datetime",
    "in_list_view": 1,
    "label": "Timestamp"
+  },
+  {
+   "fieldname": "tagging",
+   "fieldtype": "Data",
+   "label": "Tagging"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-05-07 08:23:34.711092",
+ "modified": "2025-05-09 09:19:33.897295",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Log",
