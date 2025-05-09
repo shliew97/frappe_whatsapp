@@ -139,6 +139,34 @@ class WhatsAppMessage(Document):
                 handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
             elif self.content_type == "flow":
                 handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
+            else:
+                if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1):
+                    text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
+                    if text_auto_replies:
+                        frappe.flags.skip_lead_status_update = True
+                        create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
+                        create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
+                        if text_auto_replies[0].reply_if_button_clicked:
+                            if text_auto_replies[0].reply_image:
+                                enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
+                            else:
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_if_button_clicked, queue="short", is_async=True)
+                        if text_auto_replies[0].reply_2_if_button_clicked:
+                            if text_auto_replies[0].reply_image_2:
+                                enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_2_if_button_clicked, image=text_auto_replies[0].reply_image_2, queue="short", is_async=True)
+                            else:
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
+                        if text_auto_replies[0].whatsapp_interaction_message_templates:
+                            enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
+                        if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
+                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
+                        if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
+                            frappe.get_doc({
+                                "doctype": "Booking Follow Up",
+                                "whatsapp_id": self.get("from"),
+                                "crm_lead": crm_lead_doc.name
+                            }).insert(ignore_permissions=True)
+                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
 
             is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
             if is_button_reply:
@@ -421,7 +449,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
             send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["*"])
-        if not text_auto_replies and "book" in message.lower() and len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0:
+        if not text_auto_replies and "book" in message.lower() and (len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1))):
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
             frappe.flags.skip_lead_status_update = True
