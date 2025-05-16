@@ -177,6 +177,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc.chat_close_at = add_to_date(get_datetime(), hours=22)
             crm_lead_doc.last_message_from_me = False
             crm_lead_doc.sent_chat_closing_reminder = False
+            crm_lead_doc.closed = False
             crm_lead_doc.save(ignore_permissions=True)
 
             if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_lead_status_update):
