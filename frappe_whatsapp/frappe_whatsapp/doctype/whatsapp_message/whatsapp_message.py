@@ -257,7 +257,7 @@ class WhatsAppMessage(Document):
             if open_assignments:
                 frappe.get_doc({
                     "doctype": "WhatsApp Message Log",
-                    "from": crm_lead_doc.mobile_no,
+                    "from": "CRM Master Agent",
                     "message": self.message,
                     "tagging": ", ".join(open_taggings),
                     "timestamp": self.timestamp,
