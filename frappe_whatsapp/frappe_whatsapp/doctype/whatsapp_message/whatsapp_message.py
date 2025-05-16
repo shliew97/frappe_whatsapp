@@ -445,47 +445,49 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     if not crm_lead_doc:
         crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
 
-    if "I want to purchase" in message:
-        crm_lead_doc.action = ""
-        crm_lead_doc.save(ignore_permissions=True)
-        send_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_1)
-        send_interactive_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_2, TERMS_AND_CONDITION_BUTTON)
-    elif "Hi, I want to redeem" in message:
-        customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
+    # if "I want to purchase" in message:
+    #     crm_lead_doc.action = ""
+    #     crm_lead_doc.save(ignore_permissions=True)
+    #     send_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_1)
+    #     send_interactive_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_2, TERMS_AND_CONDITION_BUTTON)
+    # elif "Hi, I want to redeem" in message:
+    #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
-        if not customer_vouchers:
-            crm_lead_doc.action = ""
-            crm_lead_doc.save(ignore_permissions=True)
-            send_message(crm_lead_doc, whatsapp_id, NO_VOUCHER_MESSAGE)
-        else:
-            crm_lead_doc.action = "Redeem Voucher"
-            crm_lead_doc.save(ignore_permissions=True)
-            send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
-    elif not message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
-        send_message(crm_lead_doc, whatsapp_id, INVALID_VOUCHER_COUNT_MESSAGE)
-    elif message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
-        customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
+    #     if not customer_vouchers:
+    #         crm_lead_doc.action = ""
+    #         crm_lead_doc.save(ignore_permissions=True)
+    #         send_message(crm_lead_doc, whatsapp_id, NO_VOUCHER_MESSAGE)
+    #     else:
+    #         crm_lead_doc.action = "Redeem Voucher"
+    #         crm_lead_doc.save(ignore_permissions=True)
+    #         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
+    # elif not message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
+    #     send_message(crm_lead_doc, whatsapp_id, INVALID_VOUCHER_COUNT_MESSAGE)
+    # elif message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
+    #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
-        if len(customer_vouchers) >= int(message):
-            redeem_voucher_confirmation_button = [
-                {
-                    "type": "reply",
-                    "reply": {
-                        "id": "confirm-redeem-{0}".format(message),
-                        "title": "Yes" 
-                    }
-                },
-                {
-                    "type": "reply",
-                    "reply": {
-                        "id": "cancel-redeem",
-                        "title": "No" 
-                    }
-                }
-            ]
-            send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
-        else:
-            send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
+    #     if len(customer_vouchers) >= int(message):
+    #         redeem_voucher_confirmation_button = [
+    #             {
+    #                 "type": "reply",
+    #                 "reply": {
+    #                     "id": "confirm-redeem-{0}".format(message),
+    #                     "title": "Yes" 
+    #                 }
+    #             },
+    #             {
+    #                 "type": "reply",
+    #                 "reply": {
+    #                     "id": "cancel-redeem",
+    #                     "title": "No" 
+    #                 }
+    #             }
+    #         ]
+    #         send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
+    #     else:
+    #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
+    if False:
+        pass
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["*"])
         if not text_auto_replies and "book" in message.lower() and (len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
