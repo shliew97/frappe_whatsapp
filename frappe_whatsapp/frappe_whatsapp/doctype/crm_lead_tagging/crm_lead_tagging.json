@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "hash",
  "creation": "2025-04-20 21:56:01.872447",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -45,10 +46,11 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-05-07 07:57:00.341819",
+ "modified": "2025-05-16 08:12:39.251358",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "CRM Lead Tagging",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {

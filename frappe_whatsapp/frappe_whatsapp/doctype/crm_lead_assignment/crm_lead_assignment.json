@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "hash",
  "creation": "2025-04-20 21:34:19.713358",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -56,10 +57,11 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-05-07 07:56:53.076718",
+ "modified": "2025-05-16 08:12:33.899657",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "CRM Lead Assignment",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {
