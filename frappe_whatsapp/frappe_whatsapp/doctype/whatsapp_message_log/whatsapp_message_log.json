@@ -8,7 +8,8 @@
   "from",
   "message",
   "tagging",
-  "timestamp"
+  "timestamp",
+  "note"
  ],
  "fields": [
   {
@@ -34,11 +35,16 @@
    "fieldname": "tagging",
    "fieldtype": "Data",
    "label": "Tagging"
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Data",
+   "label": "Note"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-05-09 09:19:33.897295",
+ "modified": "2025-05-16 07:52:01.326960",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Log",
