@@ -1066,7 +1066,7 @@ def send_chat_closing_reminder():
     unclosed_crm_leads = frappe.db.get_all("CRM Lead Assignment", filters={"status": "Completed"}, pluck="crm_lead")
     unclosed_crm_leads = list(set(unclosed_crm_leads))
     if unclosed_crm_leads:
-        crm_leads = frappe.db.get_all("CRM Lead", filters={"name": ["in", unclosed_crm_leads], "chat_close_at": ["<=", add_to_date(get_datetime(), hours=-2)]}, fields=["name", "mobile_no"])
+        crm_leads = frappe.db.get_all("CRM Lead", filters={"name": ["in", unclosed_crm_leads], "chat_close_at": ["<=", add_to_date(get_datetime(), hours=-2)], "last_reply_at": ["<=", add_to_date(get_datetime(), days=-1)]}, pluck="name")
         if crm_leads:
             crm_leads_to_close = frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": ["in", crm_leads], "status": "Completed"}, pluck="name")
             for crm_lead_to_close in crm_leads_to_close:
