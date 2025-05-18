@@ -178,6 +178,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc.last_message_from_me = False
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.closed = False
+            crm_lead_doc.latest_whatsapp_message_templates = None
             crm_lead_doc.save(ignore_permissions=True)
 
             if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_lead_status_update):
@@ -486,8 +487,28 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     #         send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
     #     else:
     #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
-    if False:
-        pass
+    if message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
+        whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
+        for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
+            if message == whatsapp_message_template_button.button_label:
+                if not crm_lead_doc:
+                    crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+                create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template_doc.name)
+                create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_message_template_doc.tagging)
+                if whatsapp_message_template_button.reply_if_button_clicked:
+                    if whatsapp_message_template_button.reply_image:
+                        enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, image=whatsapp_message_template_button.reply_image, queue="short", is_async=True)
+                    else:
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_message_template_button.reply_2_if_button_clicked:
+                    if whatsapp_message_template_button.reply_image_2:
+                        enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, image=whatsapp_message_template_button.reply_image_2, queue="short", is_async=True)
+                    else:
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked:
+                    enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked, queue="short", is_async=True)
+                break
+        return
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["*"])
         if not text_auto_replies and "book" in message.lower() and (len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
