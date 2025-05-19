@@ -730,6 +730,7 @@ def send_interaction_with_delay(crm_lead_doc, whatsapp_id, whatsapp_interaction_
         data=json.dumps(data),
     )
     message_id = response["messages"][0]["id"]
+    frappe.db.set_value("CRM Lead", crm_lead_doc.name, "latest_whatsapp_interaction_message_templates", whatsapp_interaction_message_template)
     doc = frappe.new_doc("WhatsApp Message")
     doc.update(
         {
