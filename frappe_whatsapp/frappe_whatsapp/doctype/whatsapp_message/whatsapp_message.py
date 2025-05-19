@@ -491,6 +491,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
+                frappe.flags.skip_lead_status_update = True
                 if not crm_lead_doc:
                     crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
                 create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template_doc.name)
