@@ -222,25 +222,6 @@ class WhatsAppMessage(Document):
                     "note": "CRM Master Agent",
                 }).insert(ignore_permissions=True)
 
-            if self.content_type == "text":
-                if self.message is None:
-                    self.message = ""
-
-                keywords = [
-                    "book" in self.message.lower(),
-                    "slot" in self.message.lower(),
-                    "date" in self.message.lower() and "time" in self.message.lower()
-                ]
-
-                if any(keywords) and len(open_taggings) > 0:
-                    frappe.get_doc({
-                        "doctype": "WhatsApp Message Log",
-                        "from": crm_lead_doc.mobile_no,
-                        "message": self.message,
-                        "tagging": ", ".join(open_taggings),
-                        "timestamp": self.timestamp,
-                    }).insert(ignore_permissions=True)
-
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
             master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
 
@@ -512,24 +493,18 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         return
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["*"])
-        if not text_auto_replies and "book" in message.lower() and (len(get_existing_crm_taggings(crm_lead_doc.name, "Unknown")) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
+        keywords = [
+            "book" in message.lower(),
+            "slot" in message.lower(),
+            "date" in message.lower() and "time" in message.lower()
+        ]
+        unknown_and_promotion_taggings = frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]]}, pluck="name")
+        if not text_auto_replies and any(keywords) and (len(unknown_and_promotion_taggings) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
             frappe.flags.skip_lead_status_update = True
-            create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
+            create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates, "New")
             create_crm_tagging_assignment(crm_lead_doc.name, text_auto_replies[0].tagging)
-            if text_auto_replies[0].reply_if_button_clicked and (text_auto_replies[0].name != "BookingHL" or (text_auto_replies[0].name == "BookingHL" and not is_not_within_booking_hours())):
-                if text_auto_replies[0].reply_image:
-                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
-                else:
-                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_if_button_clicked, queue="short", is_async=True)
-            if text_auto_replies[0].reply_2_if_button_clicked:
-                if text_auto_replies[0].reply_image_2:
-                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, image=text_auto_replies[0].reply_image_2, queue="short", is_async=True)
-                else:
-                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
-            if text_auto_replies[0].whatsapp_interaction_message_templates:
-                enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
             if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
             if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
