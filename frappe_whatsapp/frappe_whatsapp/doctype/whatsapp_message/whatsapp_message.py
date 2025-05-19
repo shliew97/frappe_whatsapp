@@ -179,6 +179,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc.sent_chat_closing_reminder = False
             crm_lead_doc.closed = False
             crm_lead_doc.latest_whatsapp_message_templates = None
+            crm_lead_doc.latest_whatsapp_interaction_message_templates = None
             crm_lead_doc.save(ignore_permissions=True)
 
             if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_lead_status_update):
@@ -473,8 +474,6 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
                 frappe.flags.skip_lead_status_update = True
-                if not crm_lead_doc:
-                    crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
                 create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template_doc.name)
                 create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_message_template_doc.tagging)
                 if whatsapp_message_template_button.reply_if_button_clicked:
@@ -489,8 +488,34 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_message_template_button.reply_2_if_button_clicked, queue="short", is_async=True)
                 if whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked:
                     enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked, queue="short", is_async=True)
-                break
-        return
+                return
+    elif message.isdigit() and crm_lead_doc.latest_whatsapp_interaction_message_templates:
+        whatsapp_interaction_message_template_doc = frappe.get_doc("WhatsApp Interaction Message Templates", crm_lead_doc.latest_whatsapp_interaction_message_templates)
+        for whatsapp_interaction_message_template_button in whatsapp_interaction_message_template_doc.whatsapp_interaction_message_template_buttons:
+            if message == whatsapp_interaction_message_template_button.button_label:
+                frappe.flags.skip_lead_status_update = True
+                create_crm_lead_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_button.whatsapp_message_templates)
+                create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_button.tagging)
+                if whatsapp_interaction_message_template_button.reply_if_button_clicked and (whatsapp_interaction_message_template_button.reply_id != "book-appointment" or (whatsapp_interaction_message_template_button.reply_id == "book-appointment" and not is_not_within_booking_hours())):
+                    if whatsapp_interaction_message_template_button.reply_image:
+                        enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_button.reply_if_button_clicked, image=whatsapp_interaction_message_template_button.reply_image, queue="short", is_async=True)
+                    else:
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_button.reply_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_interaction_message_template_button.reply_2_if_button_clicked:
+                    if whatsapp_interaction_message_template_button.reply_image_2:
+                        enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_button.reply_2_if_button_clicked, image=whatsapp_interaction_message_template_button.reply_image_2, queue="short", is_async=True)
+                    else:
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=whatsapp_interaction_message_template_button.reply_2_if_button_clicked, queue="short", is_async=True)
+                if whatsapp_interaction_message_template_button.send_out_of_working_hours_message and is_not_within_operating_hours():
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
+                if whatsapp_interaction_message_template_button.send_out_of_booking_hours_message and is_not_within_booking_hours():
+                    frappe.get_doc({
+                        "doctype": "Booking Follow Up",
+                        "whatsapp_id": whatsapp_id,
+                        "crm_lead": crm_lead_doc.name
+                    }).insert(ignore_permissions=True)
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
+                return
     else:
         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "keyword": message}, fields=["*"])
         if not text_auto_replies:
@@ -561,29 +586,29 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
 
-    if interactive_id == "accept-tnc":
-        crm_lead_doc.action = ""
-        crm_lead_doc.save(ignore_permissions=True)
-        send_interactive_message(crm_lead_doc, whatsapp_id, CHOOSE_PRODUCT_MESSAGE, CHOOSE_PRODUCT_BUTTON)
-    elif "voucher" in interactive_id:
-        payment_url = generate_payment_url(crm_lead_doc, interactive_id.replace("-", " ").capitalize())
-        send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, payment_url)
-    elif "confirm-redeem-" in interactive_id and crm_lead_doc.action == "Redeem Voucher":
-        customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
+    # if interactive_id == "accept-tnc":
+    #     crm_lead_doc.action = ""
+    #     crm_lead_doc.save(ignore_permissions=True)
+    #     send_interactive_message(crm_lead_doc, whatsapp_id, CHOOSE_PRODUCT_MESSAGE, CHOOSE_PRODUCT_BUTTON)
+    # elif "voucher" in interactive_id:
+    #     payment_url = generate_payment_url(crm_lead_doc, interactive_id.replace("-", " ").capitalize())
+    #     send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, payment_url)
+    # elif "confirm-redeem-" in interactive_id and crm_lead_doc.action == "Redeem Voucher":
+    #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
-        voucher_list_message = "Here's your code! 🎉\nPlease show it to our front desk to redeem your hours. 😊\nFor your security, kindly keep the code private and don't share it with others. 🔒\n\n"
+    #     voucher_list_message = "Here's your code! 🎉\nPlease show it to our front desk to redeem your hours. 😊\nFor your security, kindly keep the code private and don't share it with others. 🔒\n\n"
 
-        for i in range(int(interactive_id.replace("confirm-redeem-", ""))):
-            voucher_list_message += customer_vouchers[i].code
-            if i != (int(interactive_id.replace("confirm-redeem-", "")) - 1):
-                voucher_list_message += "\n"
+    #     for i in range(int(interactive_id.replace("confirm-redeem-", ""))):
+    #         voucher_list_message += customer_vouchers[i].code
+    #         if i != (int(interactive_id.replace("confirm-redeem-", "")) - 1):
+    #             voucher_list_message += "\n"
 
-        crm_lead_doc.action = ""
-        crm_lead_doc.save(ignore_permissions=True)
-        send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
-    elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
-        send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
-    elif whatsapp_interaction_message_template_buttons:
+    #     crm_lead_doc.action = ""
+    #     crm_lead_doc.save(ignore_permissions=True)
+    #     send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
+    # elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
+    #     send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
+    if whatsapp_interaction_message_template_buttons:
         create_crm_lead_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates)
         create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_buttons[0].tagging)
         if whatsapp_interaction_message_template_buttons[0].reply_if_button_clicked and (interactive_id != "book-appointment" or (interactive_id == "book-appointment" and not is_not_within_booking_hours())):
@@ -605,8 +630,8 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
                 "crm_lead": crm_lead_doc.name
             }).insert(ignore_permissions=True)
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
-    else:
-        send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
+    # else:
+    #     send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
 
 def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_message_id, crm_lead_doc=None):
     reply_to_messages = frappe.db.get_all("WhatsApp Message", filters={"message_id": reply_to_message_id}, fields=["name", "whatsapp_message_templates", "replied"])
