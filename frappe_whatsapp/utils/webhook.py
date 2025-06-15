@@ -51,6 +51,7 @@ def post(form_dict):
 		for message in messages:
 			message_type = message['type']
 			is_reply = True if message.get('context') and not message.get('context').get('forwarded') else False
+			is_forwarded = True if message.get('context') and message.get('context').get('forwarded') else False
 			reply_to_message_id = message['context']['id'] if is_reply else None
 			if message_type == 'text':
 				frappe.get_doc({
@@ -63,7 +64,8 @@ def post(form_dict):
 					"is_reply": is_reply,
 					"content_type": message_type,
 					"from_name": contacts[0]["profile"]["name"],
-					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 			elif message_type == 'reaction':
 				frappe.get_doc({
@@ -75,7 +77,8 @@ def post(form_dict):
 					"message_id": message['id'],
 					"content_type": "reaction",
 					"from_name": contacts[0]["profile"]["name"],
-					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 			elif message_type == 'interactive':
 				frappe.get_doc({
@@ -87,7 +90,8 @@ def post(form_dict):
 					"message_id": message['id'],
 					"content_type": "flow",
 					"from_name": contacts[0]["profile"]["name"],
-					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 			elif message_type in ["image", "audio", "video", "document", "sticker"]:
 				settings = frappe.get_doc(
@@ -126,7 +130,8 @@ def post(form_dict):
 							"message": message[message_type].get("caption",f"/files/{file_name}"),
 							"content_type" : message_type,
 							"from_name": contacts[0]["profile"]["name"],
-							"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
+							"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+							"is_forwarded": is_forwarded,
 						}).insert(ignore_permissions=True)
 
 						file = frappe.get_doc(
@@ -154,7 +159,8 @@ def post(form_dict):
 					"is_reply": is_reply,
 					"content_type": message_type,
 					"from_name": contacts[0]["profile"]["name"],
-					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 			else:
 				frappe.get_doc({
@@ -165,7 +171,8 @@ def post(form_dict):
 					"message": message[message_type].get(message_type),
 					"content_type" : message_type,
 					"from_name": contacts[0]["profile"]["name"],
-					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800)
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 
 	else:

@@ -27,6 +27,7 @@
   "attach",
   "whatsapp_message_templates",
   "replied",
+  "is_forwarded",
   "section_break_iyjf",
   "is_reply",
   "reply_to_message_id",
@@ -210,11 +211,17 @@
    "fieldname": "replied",
    "fieldtype": "Check",
    "label": "Replied"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_forwarded",
+   "fieldtype": "Check",
+   "label": "Is Forwarded"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-27 08:07:22.165345",
+ "modified": "2025-06-15 15:53:51.707914",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message",
