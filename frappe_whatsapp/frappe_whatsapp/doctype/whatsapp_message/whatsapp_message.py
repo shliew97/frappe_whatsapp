@@ -149,6 +149,7 @@ class WhatsAppMessage(Document):
                     if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
                         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
                         if text_auto_replies:
+                            frappe.flags.update_conversation_start_at = True
                             frappe.flags.skip_lead_status_update = True
                             create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
                             create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
@@ -180,6 +181,8 @@ class WhatsAppMessage(Document):
                 handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
 
             crm_lead_doc.reload()
+            if frappe.flags.update_conversation_start_at:
+                crm_lead_doc.conversation_start_at = get_datetime()
             crm_lead_doc.last_reply_at = get_datetime()
             crm_lead_doc.chat_close_at = add_to_date(get_datetime(), hours=22)
             crm_lead_doc.last_message_from_me = False
@@ -202,8 +205,6 @@ class WhatsAppMessage(Document):
                         })
 
                 if not self.flags.is_template_queue and publish:
-                    crm_lead_doc.conversation_start_at = get_datetime()
-                    crm_lead_doc.save(ignore_permissions=True)
                     frappe.publish_realtime("new_leads", {})
 
             master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
@@ -630,6 +631,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
             if any(keywords) and (len(unknown_and_promotion_taggings) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
                 text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
+            frappe.flags.update_conversation_start_at = True
             frappe.flags.skip_lead_status_update = True
             create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
             create_crm_tagging_assignment(crm_lead_doc.name, text_auto_replies[0].tagging)
@@ -658,6 +660,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         elif not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
             if text_auto_replies:
+                frappe.flags.update_conversation_start_at = True
                 frappe.flags.skip_lead_status_update = True
                 create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
                 create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
