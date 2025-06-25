@@ -12,6 +12,7 @@ import hashlib
 from crm.api.whatsapp import get_lead_or_deal_from_number
 import requests
 from frappe.utils.background_jobs import enqueue
+import re
 
 PAYMENT_STATUS_MAPPING = {
     "00": "Completed",
@@ -70,6 +71,9 @@ OUT_OF_BOOKING_HOURS_MESSAGE = "📢 This is an automated message\n\nHello! 😊
 OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nHave you already booked your slot through our new online system?\n\nIf not, don't worry—we're here to help! Just fill in the details below, and we'll assist you shortly 💬\n\n🚀 Introducing Our NEW Online Booking System! 🚀\n💡 Secure your slot in less than 1 MINUTE! No more waiting—book instantly here:\n🔗 Book Now:  https://book.healthland.com.my/booking/selectshop\n\n📋 Kindly provide the info below:\nName:\nContact No.:\nOutlet:\nDate:\nTime:\nNo. of Pax:\nTreatment:\nDuration (60min/90min/120min):\nPreferred Masseur (male/female):\nFave/Bonuslink/Coup/Member\nPackage:"
 
 CHAT_CLOSING_MESSAGE = "🌟 Hello Dear Customer! 🌟\n\nJust a quick reminder — our chat will automatically close in 24 hours if there's no reply from you. 💬\n\nWe'd love to assist you, so feel free to reply anytime. Have any questions about making a purchase? We're here for you! 😊💜\n\nLooking forward to hearing from you soon! 💬✨"
+
+SUCCESSFULLY_NOTIFIED_CUSTOMER_MESSAGE = "Successfully sent message to customer."
+PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Please key in a valid mobile no."
 
 class WhatsAppMessage(Document):
     """Send whats app messages."""
@@ -134,40 +138,42 @@ class WhatsAppMessage(Document):
             #     random_replies = frappe.db.get_all("Random Reply", pluck="message")
             #     whatsapp_message_reply.message = random.choice(random_replies)
             # whatsapp_message_reply.insert(ignore_permissions=True)
-
-            if self.content_type == "text":
-                handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
-            elif self.content_type == "flow":
-                handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
+            if crm_lead_doc.is_outlet_frontdesk:
+                handle_outlet_frontdesk(self.message, self.get("from"), crm_lead_doc)
             else:
-                if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
-                    text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
-                    if text_auto_replies:
-                        frappe.flags.skip_lead_status_update = True
-                        create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
-                        create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
-                        if text_auto_replies[0].reply_if_button_clicked:
-                            if text_auto_replies[0].reply_image:
-                                enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
-                            else:
-                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_if_button_clicked, queue="short", is_async=True)
-                        if text_auto_replies[0].reply_2_if_button_clicked:
-                            if text_auto_replies[0].reply_image_2:
-                                enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_2_if_button_clicked, image=text_auto_replies[0].reply_image_2, queue="short", is_async=True)
-                            else:
-                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
-                        if text_auto_replies[0].whatsapp_interaction_message_templates:
-                            enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
-                        if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
-                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
-                        if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
-                            if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
-                                frappe.get_doc({
-                                    "doctype": "Booking Follow Up",
-                                    "whatsapp_id": self.get("from"),
-                                    "crm_lead": crm_lead_doc.name
-                                }).insert(ignore_permissions=True)
-                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
+                if self.content_type == "text":
+                    handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
+                elif self.content_type == "flow":
+                    handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
+                else:
+                    if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
+                        text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
+                        if text_auto_replies:
+                            frappe.flags.skip_lead_status_update = True
+                            create_crm_lead_assignment(crm_lead_doc.name, text_auto_replies[0].whatsapp_message_templates)
+                            create_crm_tagging_assignment(crm_lead_doc.name, "Unknown")
+                            if text_auto_replies[0].reply_if_button_clicked:
+                                if text_auto_replies[0].reply_image:
+                                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_if_button_clicked, image=text_auto_replies[0].reply_image, queue="short", is_async=True)
+                                else:
+                                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_if_button_clicked, queue="short", is_async=True)
+                            if text_auto_replies[0].reply_2_if_button_clicked:
+                                if text_auto_replies[0].reply_image_2:
+                                    enqueue(method=send_image_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_2_if_button_clicked, image=text_auto_replies[0].reply_image_2, queue="short", is_async=True)
+                                else:
+                                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=text_auto_replies[0].reply_2_if_button_clicked, queue="short", is_async=True)
+                            if text_auto_replies[0].whatsapp_interaction_message_templates:
+                                enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), whatsapp_interaction_message_template=text_auto_replies[0].whatsapp_interaction_message_templates, queue="short", is_async=True)
+                            if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
+                            if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
+                                if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
+                                    frappe.get_doc({
+                                        "doctype": "Booking Follow Up",
+                                        "whatsapp_id": self.get("from"),
+                                        "crm_lead": crm_lead_doc.name
+                                    }).insert(ignore_permissions=True)
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
 
             is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
             if is_button_reply:
@@ -424,6 +430,100 @@ def calculate_md5(input_string):
     # Get the hexadecimal representation of the hash
     md5_result = md5_hash.hexdigest()
     return md5_result
+
+def handle_outlet_frontdesk(message, frontdesk_whatsapp_id, crm_lead_doc):
+    front_desk_crm_lead_doc = get_crm_lead(frontdesk_whatsapp_id, frontdesk_whatsapp_id)
+    customer_whatsapp_id = normalize_phone_number(message)
+    if not validate_phone_number(normalize_phone_number):
+        enqueue(method=send_message_with_delay, crm_lead_doc=front_desk_crm_lead_doc, whatsapp_id=frontdesk_whatsapp_id, text=PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE, queue="short", is_async=True)
+        return
+    settings = frappe.get_single("WhatsApp Settings")
+    token = settings.get_password("token")
+    whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", "outlet_frontdesk_request")
+    headers = {
+        "authorization": f"Bearer {token}",
+        "content-type": "application/json",
+    }
+    parameters = []
+    try:
+        reference_name, doctype = get_lead_or_deal_from_number(customer_whatsapp_id)
+        if not reference_name:
+            crm_lead_doc = frappe.new_doc("CRM Lead")
+            crm_lead_doc.lead_name = customer_whatsapp_id
+            crm_lead_doc.first_name = customer_whatsapp_id
+            crm_lead_doc.last_name = ""
+            crm_lead_doc.mobile_no = customer_whatsapp_id
+            crm_lead_doc.insert(ignore_permissions=True)
+            reference_name = crm_lead_doc.name
+        else:
+            crm_lead_doc = frappe.get_doc(doctype, reference_name)
+            crm_lead_doc.save(ignore_permissions=True)
+
+        create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template_doc.name)
+        create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_message_template_doc.tagging)
+
+        data = {
+            "messaging_product": "whatsapp",
+            "to": customer_whatsapp_id,
+            "type": "template",
+            "template": {
+                "name": whatsapp_message_template_doc.name,
+                "language": {"code": "en"},
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": parameters
+                    }
+                ],
+            },
+        }
+        response = make_post_request(
+            f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
+            headers=headers,
+            data=json.dumps(data),
+        )
+        message_id = response["messages"][0]["id"]
+        doc = frappe.new_doc("WhatsApp Message")
+        doc.update(
+            {
+                "reference_doctype": "CRM Lead",
+                "reference_name": reference_name,
+                "message_type": "Manual",
+                "message": whatsapp_message_template_doc.message,
+                "content_type": "text",
+                "to": customer_whatsapp_id,
+                "message_id": message_id,
+                "status": "Success",
+                "timestamp": get_datetime(),
+                "whatsapp_message_templates": whatsapp_message_template_doc.name
+            }
+        )
+        doc.flags.is_template_queue = True
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+        enqueue(method=send_message_with_delay, crm_lead_doc=front_desk_crm_lead_doc, whatsapp_id=frontdesk_whatsapp_id, text=SUCCESSFULLY_NOTIFIED_CUSTOMER_MESSAGE, queue="short", is_async=True)
+
+    except Exception as e:
+        frappe.db.commit()
+        frappe.log_error(title="Error", message=str(e))
+
+def normalize_phone_number(number: str) -> str:
+    """
+    Remove all non-digit characters and optionally normalize.
+    If number starts with '01', prepend '6'.
+    """
+    digits = re.sub(r'\D', '', number)
+    
+    if digits.startswith('01'):
+        digits = '6' + digits
+
+    return digits
+
+def validate_phone_number(cleaned_number: str) -> bool:
+    """
+    Validates that the phone number has a valid length (10–15 digits).
+    """
+    return 10 <= len(cleaned_number) <= 15
 
 def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     if not crm_lead_doc:
