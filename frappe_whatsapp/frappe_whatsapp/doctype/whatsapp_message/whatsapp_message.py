@@ -161,11 +161,12 @@ class WhatsAppMessage(Document):
                         if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
                             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
                         if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
-                            frappe.get_doc({
-                                "doctype": "Booking Follow Up",
-                                "whatsapp_id": self.get("from"),
-                                "crm_lead": crm_lead_doc.name
-                            }).insert(ignore_permissions=True)
+                            if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
+                                frappe.get_doc({
+                                    "doctype": "Booking Follow Up",
+                                    "whatsapp_id": self.get("from"),
+                                    "crm_lead": crm_lead_doc.name
+                                }).insert(ignore_permissions=True)
                             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
 
             is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
@@ -509,11 +510,12 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                 if whatsapp_interaction_message_template_button.send_out_of_working_hours_message and is_not_within_operating_hours():
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
                 if whatsapp_interaction_message_template_button.send_out_of_booking_hours_message and is_not_within_booking_hours():
-                    frappe.get_doc({
-                        "doctype": "Booking Follow Up",
-                        "whatsapp_id": whatsapp_id,
-                        "crm_lead": crm_lead_doc.name
-                    }).insert(ignore_permissions=True)
+                    if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
+                        frappe.get_doc({
+                            "doctype": "Booking Follow Up",
+                            "whatsapp_id": whatsapp_id,
+                            "crm_lead": crm_lead_doc.name
+                        }).insert(ignore_permissions=True)
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
                 return
     else:
@@ -546,11 +548,12 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
             if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
             if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
-                frappe.get_doc({
-                    "doctype": "Booking Follow Up",
-                    "whatsapp_id": whatsapp_id,
-                    "crm_lead": crm_lead_doc.name
-                }).insert(ignore_permissions=True)
+                if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
+                    frappe.get_doc({
+                        "doctype": "Booking Follow Up",
+                        "whatsapp_id": whatsapp_id,
+                        "crm_lead": crm_lead_doc.name
+                    }).insert(ignore_permissions=True)
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
         elif not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
             text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
@@ -573,11 +576,12 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                 if text_auto_replies[0].send_out_of_working_hours_message and is_not_within_operating_hours():
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
                 if text_auto_replies[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
-                    frappe.get_doc({
-                        "doctype": "Booking Follow Up",
-                        "whatsapp_id": whatsapp_id,
-                        "crm_lead": crm_lead_doc.name
-                    }).insert(ignore_permissions=True)
+                    if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
+                        frappe.get_doc({
+                            "doctype": "Booking Follow Up",
+                            "whatsapp_id": whatsapp_id,
+                            "crm_lead": crm_lead_doc.name
+                        }).insert(ignore_permissions=True)
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
 
 def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_lead_doc=None):
@@ -624,11 +628,12 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
         if whatsapp_interaction_message_template_buttons[0].send_out_of_working_hours_message and is_not_within_operating_hours():
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_WORKING_HOURS_MESSAGE, queue="short", is_async=True)
         if whatsapp_interaction_message_template_buttons[0].send_out_of_booking_hours_message and is_not_within_booking_hours():
-            frappe.get_doc({
-                "doctype": "Booking Follow Up",
-                "whatsapp_id": whatsapp_id,
-                "crm_lead": crm_lead_doc.name
-            }).insert(ignore_permissions=True)
+            if not frappe.db.exists("Booking Follow Up", {"crm_lead": crm_lead_doc.name}):
+                frappe.get_doc({
+                    "doctype": "Booking Follow Up",
+                    "whatsapp_id": whatsapp_id,
+                    "crm_lead": crm_lead_doc.name
+                }).insert(ignore_permissions=True)
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
     # else:
     #     send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
