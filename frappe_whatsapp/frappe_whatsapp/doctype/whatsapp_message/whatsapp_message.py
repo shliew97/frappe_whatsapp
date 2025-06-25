@@ -435,7 +435,7 @@ def calculate_md5(input_string):
 def handle_outlet_frontdesk(message, frontdesk_whatsapp_id, crm_lead_doc):
     front_desk_crm_lead_doc = get_crm_lead(frontdesk_whatsapp_id, frontdesk_whatsapp_id)
     customer_whatsapp_id = normalize_phone_number(message)
-    if not validate_phone_number(normalize_phone_number):
+    if not validate_phone_number(customer_whatsapp_id):
         enqueue(method=send_message_with_delay, crm_lead_doc=front_desk_crm_lead_doc, whatsapp_id=frontdesk_whatsapp_id, text=PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE, queue="short", is_async=True)
         return
     settings = frappe.get_single("WhatsApp Settings")
