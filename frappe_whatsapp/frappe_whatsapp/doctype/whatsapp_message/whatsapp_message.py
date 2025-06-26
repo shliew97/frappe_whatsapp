@@ -181,7 +181,7 @@ class WhatsAppMessage(Document):
                 handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
 
             crm_lead_doc.reload()
-            if frappe.flags.update_conversation_start_at:
+            if frappe.flags.update_conversation_start_at or not crm_lead_doc.conversation_start_at:
                 crm_lead_doc.conversation_start_at = get_datetime()
             crm_lead_doc.last_reply_at = get_datetime()
             crm_lead_doc.chat_close_at = add_to_date(get_datetime(), hours=22)
