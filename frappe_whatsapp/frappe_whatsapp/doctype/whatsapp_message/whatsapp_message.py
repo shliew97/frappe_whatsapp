@@ -72,8 +72,8 @@ OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nHave you already b
 
 CHAT_CLOSING_MESSAGE = "🌟 Hello Dear Customer! 🌟\n\nJust a quick reminder — our chat will automatically close in 24 hours if there's no reply from you. 💬\n\nWe'd love to assist you, so feel free to reply anytime. Have any questions about making a purchase? We're here for you! 😊💜\n\nLooking forward to hearing from you soon! 💬✨"
 
-SUCCESSFULLY_NOTIFIED_CUSTOMER_MESSAGE = "Successfully sent message to customer."
-PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Please key in a valid mobile no."
+SUCCESSFULLY_NOTIFIED_CUSTOMER_MESSAGE = "✅ Noted!\nThe booking message has been successfully sent to the customer.\n\n👉 To send to another customer, simply submit a new phone number.\nYou can send phone numbers anytime!\n\nThank you! 🙏"
+PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Hi! So sorry — the phone number you entered seems to be invalid 😅\nKindly re-enter the number using the correct format:\n\n📌 Example:\n🇲🇾 Malaysia: 6012XXXXXXX\n🇸🇬 Singapore: 65XXXXXXX\n\nThank you for your cooperation! 🙏"
 
 class WhatsAppMessage(Document):
     """Send whats app messages."""
@@ -767,11 +767,11 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
                 break
 
 def send_message_with_delay(crm_lead_doc, whatsapp_id, text):
-    time.sleep(3)
+    time.sleep(2)
     send_message(crm_lead_doc, whatsapp_id, text)
 
 def send_image_with_delay(crm_lead_doc, whatsapp_id, text, image):
-    time.sleep(3)
+    time.sleep(2)
     send_image(crm_lead_doc, whatsapp_id, text, image)
 
 def send_image(crm_lead_doc, whatsapp_id, text, image):
@@ -787,7 +787,7 @@ def send_image(crm_lead_doc, whatsapp_id, text, image):
     whatsapp_message_reply.insert(ignore_permissions=True)
 
 def send_interaction_with_delay(crm_lead_doc, whatsapp_id, whatsapp_interaction_message_template):
-    time.sleep(3)
+    time.sleep(2)
     whatsapp_interaction_message_template_doc = frappe.get_doc("WhatsApp Interaction Message Templates", whatsapp_interaction_message_template)
     settings = frappe.get_single("WhatsApp Settings")
     token = settings.get_password("token")

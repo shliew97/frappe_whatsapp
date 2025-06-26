@@ -14,7 +14,7 @@ def webhook():
 	"""Meta webhook."""
 	if frappe.request.method == "GET":
 		return get()
-	enqueue(post, form_dict=dict(frappe.form_dict), queue="ws", is_async=True)
+	enqueue(post, form_dict=dict(frappe.form_dict), queue="short", is_async=True)
 	return
 
 
