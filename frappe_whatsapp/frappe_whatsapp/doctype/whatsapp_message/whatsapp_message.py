@@ -138,6 +138,8 @@ class WhatsAppMessage(Document):
             #     random_replies = frappe.db.get_all("Random Reply", pluck="message")
             #     whatsapp_message_reply.message = random.choice(random_replies)
             # whatsapp_message_reply.insert(ignore_permissions=True)
+            is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
+
             if crm_lead_doc.is_outlet_frontdesk:
                 handle_outlet_frontdesk(self.message, self.get("from"), crm_lead_doc)
             else:
@@ -145,6 +147,8 @@ class WhatsAppMessage(Document):
                     handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
                 elif self.content_type == "flow":
                     handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
+                elif is_button_reply:
+                    handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
                 else:
                     if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
                         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
@@ -175,10 +179,6 @@ class WhatsAppMessage(Document):
                                         "crm_lead": crm_lead_doc.name
                                     }).insert(ignore_permissions=True)
                                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
-
-            is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
-            if is_button_reply:
-                handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
 
             crm_lead_doc.reload()
             if frappe.flags.update_conversation_start_at or not crm_lead_doc.conversation_start_at:
