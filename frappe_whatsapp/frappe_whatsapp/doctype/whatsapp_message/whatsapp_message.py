@@ -207,54 +207,54 @@ class WhatsAppMessage(Document):
                 if not self.flags.is_template_queue and publish:
                     frappe.publish_realtime("new_leads", {})
 
-            master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
+            # master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
 
-            open_taggings = frappe.db.get_all(
-                "CRM Lead Tagging",
-                filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
-                pluck="tagging"
-            )
+            # open_taggings = frappe.db.get_all(
+            #     "CRM Lead Tagging",
+            #     filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
+            #     pluck="tagging"
+            # )
 
-            open_assignments = frappe.db.get_all(
-                "CRM Lead Assignment",
-                filters={"crm_lead": crm_lead_doc.name, "whatsapp_message_templates": ["in", master_agent_assigned_templates], "status": ["in", ["New", "Accepted"]]},
-                pluck="name"
-            )
+            # open_assignments = frappe.db.get_all(
+            #     "CRM Lead Assignment",
+            #     filters={"crm_lead": crm_lead_doc.name, "whatsapp_message_templates": ["in", master_agent_assigned_templates], "status": ["in", ["New", "Accepted"]]},
+            #     pluck="name"
+            # )
 
-            if open_assignments:
-                frappe.get_doc({
-                    "doctype": "WhatsApp Message Log",
-                    "from": crm_lead_doc.mobile_no,
-                    "message": self.message,
-                    "tagging": ", ".join(open_taggings),
-                    "timestamp": self.timestamp,
-                    "note": "CRM Master Agent",
-                }).insert(ignore_permissions=True)
+            # if open_assignments:
+            #     frappe.get_doc({
+            #         "doctype": "WhatsApp Message Log",
+            #         "from": crm_lead_doc.mobile_no,
+            #         "message": self.message,
+            #         "tagging": ", ".join(open_taggings),
+            #         "timestamp": self.timestamp,
+            #         "note": "CRM Master Agent",
+            #     }).insert(ignore_permissions=True)
 
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
-            master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
+            # master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
 
-            open_taggings = frappe.db.get_all(
-                "CRM Lead Tagging",
-                filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
-                pluck="tagging"
-            )
+            # open_taggings = frappe.db.get_all(
+            #     "CRM Lead Tagging",
+            #     filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
+            #     pluck="tagging"
+            # )
 
-            open_assignments = frappe.db.get_all(
-                "CRM Lead Assignment",
-                filters={"crm_lead": crm_lead_doc.name, "whatsapp_message_templates": ["in", master_agent_assigned_templates], "status": ["in", ["New", "Accepted"]]},
-                pluck="name"
-            )
+            # open_assignments = frappe.db.get_all(
+            #     "CRM Lead Assignment",
+            #     filters={"crm_lead": crm_lead_doc.name, "whatsapp_message_templates": ["in", master_agent_assigned_templates], "status": ["in", ["New", "Accepted"]]},
+            #     pluck="name"
+            # )
 
-            if open_assignments:
-                frappe.get_doc({
-                    "doctype": "WhatsApp Message Log",
-                    "from": "CRM Master Agent",
-                    "message": self.message,
-                    "tagging": ", ".join(open_taggings),
-                    "timestamp": self.timestamp,
-                    "note": "CRM Master Agent",
-                }).insert(ignore_permissions=True)
+            # if open_assignments:
+            #     frappe.get_doc({
+            #         "doctype": "WhatsApp Message Log",
+            #         "from": "CRM Master Agent",
+            #         "message": self.message,
+            #         "tagging": ", ".join(open_taggings),
+            #         "timestamp": self.timestamp,
+            #         "note": "CRM Master Agent",
+            #     }).insert(ignore_permissions=True)
 
             crm_lead_doc.reload()
             if "CRM Admin" in frappe.get_roles():
