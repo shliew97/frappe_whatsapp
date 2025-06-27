@@ -1225,6 +1225,8 @@ def send_chat_closing_reminder():
                 frappe.db.set_value("CRM Lead Tagging", tagging_to_close, {
                     "status": "Closed"
                 })
+            for crm_lead in crm_leads:
+                frappe.db.set_value("CRM Lead", crm_lead, "last_reply_by", None)
 
 def get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates):
     return frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead, "whatsapp_message_templates": whatsapp_message_templates}, pluck="name")
