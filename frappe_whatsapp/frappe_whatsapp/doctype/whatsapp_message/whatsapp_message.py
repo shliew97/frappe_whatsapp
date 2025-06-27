@@ -627,7 +627,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                 "slot" in message.lower(),
                 "date" in message.lower() and "time" in message.lower()
             ]
-            unknown_and_promotion_taggings = frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]]}, pluck="name")
+            unknown_and_promotion_taggings = frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"}, pluck="name")
             if any(keywords) and (len(unknown_and_promotion_taggings) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
                 text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
