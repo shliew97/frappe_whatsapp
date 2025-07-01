@@ -622,7 +622,8 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
             keywords = [
                 "book" in message.lower(),
                 "slot" in message.lower(),
-                "date" in message.lower() and "time" in message.lower()
+                "date" in message.lower() and "time" in message.lower(),
+                "cancel" in message.lower(),
             ]
             unknown_and_promotion_taggings = frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"}, pluck="name")
             if any(keywords) and (len(unknown_and_promotion_taggings) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
@@ -1222,8 +1223,17 @@ def send_chat_closing_reminder():
                 frappe.db.set_value("CRM Lead Tagging", tagging_to_close, {
                     "status": "Closed"
                 })
-            for crm_lead in crm_leads:
-                frappe.db.set_value("CRM Lead", crm_lead, "last_reply_by", None)
+
+    frappe.db.commit()
+    crm_leads = frappe.db.get_all("CRM Lead", filters={"chat_close_at": ["<=", add_to_date(get_datetime(), hours=-2)]}, pluck="name")
+    for crm_lead in crm_leads:
+        frappe.db.set_value("CRM Lead", crm_lead, {
+            "conversation_start_at": None,
+            "last_reply_by_user": None,
+            "last_reply_by": None,
+            "last_reply_at": None,
+            "chat_close_at": None,
+        })
 
 def get_existing_crm_lead_assignments(crm_lead, whatsapp_message_templates):
     return frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead, "whatsapp_message_templates": whatsapp_message_templates}, pluck="name")
