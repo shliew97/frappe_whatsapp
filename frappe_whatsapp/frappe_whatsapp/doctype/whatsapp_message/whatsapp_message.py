@@ -187,7 +187,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc.chat_close_at = add_to_date(get_datetime(), hours=22)
             crm_lead_doc.last_message_from_me = False
             crm_lead_doc.sent_chat_closing_reminder = False
-            crm_lead_doc.closed = False
+            crm_lead_doc.closed = 0
             crm_lead_doc.latest_whatsapp_message_templates = None
             crm_lead_doc.latest_whatsapp_interaction_message_templates = None
             crm_lead_doc.save(ignore_permissions=True)
@@ -259,6 +259,7 @@ class WhatsAppMessage(Document):
             crm_lead_doc.reload()
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest" and frappe.session.user != "Administrator":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
+            crm_lead_doc.closed = 0
             crm_lead_doc.last_reply_at = get_datetime()
             crm_lead_doc.last_message_from_me = True
             crm_lead_doc.save(ignore_permissions=True)
