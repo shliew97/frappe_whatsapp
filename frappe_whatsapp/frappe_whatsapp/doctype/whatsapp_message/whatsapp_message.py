@@ -1226,7 +1226,7 @@ def send_chat_closing_reminder():
                 })
 
     frappe.db.commit()
-    crm_leads = frappe.db.get_all("CRM Lead", filters={"chat_close_at": ["<=", add_to_date(get_datetime(), hours=-2)]}, pluck="name")
+    crm_leads = frappe.db.get_all("CRM Lead", filters=[["CRM Lead", "chat_close_at", "is", "set"], ["CRM Lead", "chat_close_at", "<", add_to_date(get_datetime(), hours=-2)]], pluck="name")
     for crm_lead in crm_leads:
         frappe.db.set_value("CRM Lead", crm_lead, {
             "conversation_start_at": None,
