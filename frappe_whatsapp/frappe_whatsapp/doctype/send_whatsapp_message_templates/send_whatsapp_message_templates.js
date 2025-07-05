@@ -14,6 +14,7 @@ frappe.ui.form.on("Send WhatsApp Message Templates", {
 		})
 	},
 	hide_and_set_primary_action(frm) {
+		frm.page.clear_menu();
 		frm.page.clear_primary_action();
 		frm.page.set_primary_action("Send WhatsApp Message Template", () => {
 			if (!frm.doc.mobile_no || !frm.doc.whatsapp_message_templates) {
