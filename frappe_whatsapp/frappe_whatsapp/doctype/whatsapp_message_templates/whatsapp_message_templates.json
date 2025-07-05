@@ -8,6 +8,7 @@
  "field_order": [
   "template_name",
   "is_crm_agent_template",
+  "allow_trigger",
   "tagging",
   "message",
   "whatsapp_message_template_parameters",
@@ -55,11 +56,18 @@
    "fieldtype": "Select",
    "label": "Tagging",
    "options": "Unknown\nBooking - Action Required\nPromotion"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:frappe.user.has_role(\"System Manager\")",
+   "fieldname": "allow_trigger",
+   "fieldtype": "Check",
+   "label": "Allow Trigger"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-20 22:03:32.147500",
+ "modified": "2025-07-05 10:27:03.910146",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Templates",
@@ -79,6 +87,7 @@
    "write": 1
   }
  ],
+ "search_fields": "message",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

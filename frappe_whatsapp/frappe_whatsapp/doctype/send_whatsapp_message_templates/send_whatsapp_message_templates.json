@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "allow_rename": 1,
+ "creation": "2025-07-05 10:16:30.748114",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "mobile_no",
+  "whatsapp_message_templates"
+ ],
+ "fields": [
+  {
+   "description": "Key in Mobile No separated by #\nMobile No format:\nMalaysia: 6012XXXXXXX\nSingapore: 65XXXXXXX",
+   "fieldname": "mobile_no",
+   "fieldtype": "Long Text",
+   "in_list_view": 1,
+   "label": "Mobile No"
+  },
+  {
+   "fieldname": "whatsapp_message_templates",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "WhatsApp Message Templates",
+   "options": "WhatsApp Message Templates"
+  }
+ ],
+ "hide_toolbar": 1,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-07-05 10:38:04.919482",
+ "modified_by": "Administrator",
+ "module": "Frappe Whatsapp",
+ "name": "Send WhatsApp Message Templates",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

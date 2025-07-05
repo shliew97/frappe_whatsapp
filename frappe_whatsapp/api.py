@@ -11,7 +11,8 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message i
 
 @frappe.whitelist()
 def enqueue_send_whatsapp_template(whatsapp_message_template, whatsapp_template_queues):
-    whatsapp_template_queues = json.loads(whatsapp_template_queues)
+    if isinstance(whatsapp_template_queues, str):
+        whatsapp_template_queues = json.loads(whatsapp_template_queues)
     whatsapp_template_queues = frappe.db.get_all("WhatsApp Template Queue", filters={"status": "Pending", "name": ["in", whatsapp_template_queues]}, fields=["name", "phone_number", "customer_name", "outlet"])
     for whatsapp_template_queue in whatsapp_template_queues:
         frappe.db.set_value("WhatsApp Template Queue", whatsapp_template_queue.name, "status", "In Queue", update_modified=False)
