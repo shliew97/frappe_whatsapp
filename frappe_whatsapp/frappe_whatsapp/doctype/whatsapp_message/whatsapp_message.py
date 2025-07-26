@@ -68,7 +68,7 @@ DO_NOT_UNDERSTAND_MESSAGE = "Opps I cannot understand you."
 
 OUT_OF_WORKING_HOURS_MESSAGE = "Hello! 😊 Thanks for reaching out!\n\n📅 Our working hours: 9 AM - 5 PM (Monday - Friday). While we're currently unavailable, drop us a message, and we'll get back to you ASAP!\n\n💡 Want to check out our latest deals or make a purchase? Click the link below for exciting offers! 🎉👇\n\nhttps://book.healthland.com.my/privatelink/nojokepwp\n\nThank you for your patience & support! 💜"
 OUT_OF_BOOKING_HOURS_MESSAGE = "📢 This is an automated message\n\nHello! 😊 Thanks for reaching out!\n\n📅 Our booking hours: 10 AM - 9 PM. While we're currently unavailable, leave us a message, and we'll get back to you ASAP!\n\n💡 Need to book now? Try our Online Booking System for a fast & hassle-free experience! 🚀\n👉 Book here: https://book.healthland.com.my/booking/selectshop \n\nThank you for your patience & understanding! 💜"
-OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nHave you already booked your slot through our new online system?\n\nIf not, don't worry—we're here to help! Just fill in the details below, and we'll assist you shortly 💬\n\n🚀 Introducing Our NEW Online Booking System! 🚀\n💡 Secure your slot in less than 1 MINUTE! No more waiting—book instantly here:\n🔗 Book Now:  https://book.healthland.com.my/booking/selectshop\n\n📋 Kindly provide the info below:\nName:\nContact No.:\nOutlet:\nDate:\nTime:\nNo. of Pax:\nTreatment:\nDuration (60min/90min/120min):\nPreferred Masseur (male/female):\nFave/Bonuslink/Coup/Member\nPackage:"
+OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nThank you for reaching out to HealthLand 💜\n\nOur WhatsApp is for package/voucher redemption bookings only 💆‍♀️💆‍♂️\nFor walk-in or non-package customers, we recommend booking online to enjoy:\n✅ Enjoy better rates compared to walk-in\n✅ Secure your slot in advance\n👉 https://book.healthland.com.my/booking/selectshop \n\n✨ Have you booked online yet?\nIf not, no worries — just fill in the form below and we'll help you make the booking:\n\n• Name\n• Contact No.\n• Date & Time\n• Outlet\n• No. of Pax\n• Treatment (Foot / Thai / Oil)\n• Duration (60 / 90 / 120 min)\n• Preferred Masseur (Male / Female)\n• Voucher / Package\n\n🕒 Filling in the form helps us secure your slot faster and avoid delays.\nWe look forward to serving you soon! 💚"
 
 CHAT_CLOSING_MESSAGE = "🌟 Hello Dear Customer! 🌟\n\nJust a quick reminder — our chat will automatically close in 24 hours if there's no reply from you. 💬\n\nWe'd love to assist you, so feel free to reply anytime. Have any questions about making a purchase? We're here for you! 😊💜\n\nLooking forward to hearing from you soon! 💬✨"
 
@@ -143,6 +143,8 @@ class WhatsAppMessage(Document):
             if crm_lead_doc.is_outlet_frontdesk:
                 handle_outlet_frontdesk(self.message, self.get("from"), crm_lead_doc)
             else:
+                if crm_lead_doc.is_special_attention:
+                    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "New")
                 if self.content_type == "text":
                     handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
                 elif self.content_type == "flow":
@@ -192,6 +194,8 @@ class WhatsAppMessage(Document):
             crm_lead_doc.latest_whatsapp_interaction_message_templates = None
             crm_lead_doc.save(ignore_permissions=True)
 
+            published=False
+
             if (not is_button_reply and self.content_type != "flow" and not frappe.flags.skip_lead_status_update):
                 publish = False
                 existing_open_assignments = frappe.db.get_all("CRM Lead Assignment", filters={"crm_lead": crm_lead_doc.name, "status": ["!=", "Case Closed"]}, fields=["*"])
@@ -205,7 +209,11 @@ class WhatsAppMessage(Document):
                         })
 
                 if not self.flags.is_template_queue and publish:
+                    published = True
                     frappe.publish_realtime("new_leads", {})
+
+            if not published and crm_lead_doc.is_special_attention:
+                frappe.publish_realtime("new_leads", {})
 
             # master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
 
@@ -259,6 +267,8 @@ class WhatsAppMessage(Document):
             crm_lead_doc.reload()
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest" and frappe.session.user != "Administrator":
                 crm_lead_doc.last_reply_by_user = frappe.session.user
+            if not crm_lead_doc.conversation_start_at:
+                crm_lead_doc.conversation_start_at = get_datetime()
             crm_lead_doc.closed = 0
             crm_lead_doc.last_reply_at = get_datetime()
             crm_lead_doc.last_message_from_me = True
@@ -627,7 +637,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
                 "cancel" in message.lower(),
             ]
             unknown_and_promotion_taggings = frappe.db.get_all("CRM Lead Tagging", filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"}, pluck="name")
-            if any(keywords) and (len(unknown_and_promotion_taggings) > 0 or (not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed)):
+            if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
                 text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "BookingHL"}, fields=["*"])
         if text_auto_replies:
             frappe.flags.update_conversation_start_at = True
