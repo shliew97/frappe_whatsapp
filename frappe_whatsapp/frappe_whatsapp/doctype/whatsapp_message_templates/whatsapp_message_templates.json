@@ -10,6 +10,7 @@
   "is_crm_agent_template",
   "allow_trigger",
   "tagging",
+  "header_image",
   "message",
   "whatsapp_message_template_parameters",
   "whatsapp_message_template_buttons"
@@ -63,11 +64,17 @@
    "fieldname": "allow_trigger",
    "fieldtype": "Check",
    "label": "Allow Trigger"
+  },
+  {
+   "fieldname": "header_image",
+   "fieldtype": "Attach Image",
+   "label": "Header Image"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-07-05 10:27:03.910146",
+ "make_attachments_public": 1,
+ "modified": "2025-08-13 17:13:09.475793",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Templates",

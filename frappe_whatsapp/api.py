@@ -54,6 +54,26 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
             create_crm_lead_assignment(crm_lead_doc.name, whatsapp_message_template)
             create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_message_template_doc.tagging)
 
+            components = [
+                {
+                    "type": "body",
+                    "parameters": parameters
+                }
+            ]
+
+            if whatsapp_message_template_doc.header_image:
+                components.append({
+                    "type": "header",
+                    "parameters": [
+                        {
+                            "type": "image",
+                            "image": {
+                                "link": "https://crm.techmind.com.my{0}".format(whatsapp_message_template_doc.header_image)
+                            }
+                        }
+                    ]
+                })
+
             data = {
                 "messaging_product": "whatsapp",
                 "to": whatsapp_template_queue.phone_number,
@@ -61,12 +81,7 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
                 "template": {
                     "name": whatsapp_message_template_doc.name,
                     "language": {"code": "en"},
-                    "components": [
-                        {
-                            "type": "body",
-                            "parameters": parameters
-                        }
-                    ],
+                    "components": components,
                 },
             }
             response = make_post_request(
