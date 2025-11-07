@@ -75,6 +75,8 @@ CHAT_CLOSING_MESSAGE = "🌟 Hello Dear Customer! 🌟\n\nJust a quick reminder 
 SUCCESSFULLY_NOTIFIED_CUSTOMER_MESSAGE = "✅ Noted!\nThe booking message has been successfully sent to the customer.\n\n👉 To send to another customer, simply submit a new phone number.\nYou can send phone numbers anytime!\n\nThank you! 🙏"
 PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Hi! So sorry — the phone number you entered seems to be invalid 😅\nKindly re-enter the number using the correct format:\n\n📌 Example:\n🇲🇾 Malaysia: 6012XXXXXXX\n🇸🇬 Singapore: 65XXXXXXX\n\nThank you for your cooperation! 🙏"
 
+REQUEST_PAPER_VOUCHER_ENDPOINT = "/api/method/healthland_pos.api.get_paper_voucher"
+
 class WhatsAppMessage(Document):
     """Send whats app messages."""
 
@@ -579,7 +581,9 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     #         send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
     #     else:
     #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
-    if message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
+    if "Hi, I would like to request a voucher code" in message:
+        handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
+    elif message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
@@ -1295,3 +1299,29 @@ def create_crm_tagging_assignment(crm_lead, tagging, status=None):
             "crm_lead": crm_lead,
             "tagging": "Unknown"
         })
+
+def handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id):
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"name": "SOMA"}, pluck="name")
+    for integration_setting in integration_settings:
+        integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
+        url = integration_settings_doc.site_url + REQUEST_PAPER_VOUCHER_ENDPOINT
+
+        headers = {
+            "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
+            "Content-Type": "application/json"
+        }
+
+        request_body = {
+            "mobile": whatsapp_id,
+        }
+
+        try:
+            response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
+            response.raise_for_status()
+            response_data = response.json()
+            if response_data.get("message"):
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=response_data["message"], queue="short", is_async=True)
+        except requests.Timeout:
+            frappe.throw("Request timed out after 30 seconds")
+        except requests.RequestException as e:
+            frappe.throw(f"An error occurred: {e}")
