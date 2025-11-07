@@ -582,7 +582,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     #         send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
     #     else:
     #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
-    if "Hi, I would like to request a voucher code" in message:
+    if "like to enjoy my SOM SOM membership rate for today" in message:
         handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
     elif "Hi, I would like to redeem SOMA free membership" in message:
         free_member_subscription_id = message.split(":")[0]
