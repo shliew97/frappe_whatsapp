@@ -584,8 +584,8 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
     if "like to enjoy my SOM SOM membership rate for today" in message:
         handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
-    elif "Hi, I would like to redeem SOMA free membership" in message:
-        free_member_subscription_id = message.split(":")[0]
+    elif "1 year SOM SOM membership code" in message:
+        free_member_subscription_id = message.split(":")[-1].strip().lower()
         handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, free_member_subscription_id)
     elif message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
