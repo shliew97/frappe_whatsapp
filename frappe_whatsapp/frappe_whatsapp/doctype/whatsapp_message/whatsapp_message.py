@@ -288,7 +288,6 @@ class WhatsAppMessage(Document):
             crm_lead_doc_dict = {
                 "last_reply_at": get_datetime(),
                 "last_message_from_me": True,
-                "sent_chat_closing_reminder": True,
                 "closed": 0,
             }
 
