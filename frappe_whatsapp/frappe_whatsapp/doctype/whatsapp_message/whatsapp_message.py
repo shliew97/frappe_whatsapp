@@ -1352,6 +1352,10 @@ def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, free_membe
             response_data = response.json()
             if response_data.get("message"):
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=response_data["message"], queue="short", is_async=True)
+            if response_data.get("shared_by") and response_data.get("message_2"):
+                reference_name, doctype = get_lead_or_deal_from_number(response_data["shared_by"])
+                shared_by_crm_lead_doc = frappe.get_doc(doctype, reference_name)
+                enqueue(method=send_message_with_delay, crm_lead_doc=shared_by_crm_lead_doc, whatsapp_id=response_data["shared_by"], text=response_data["message_2"], queue="short", is_async=True)
         except requests.Timeout:
             frappe.throw("Request timed out after 30 seconds")
         except requests.RequestException as e:
