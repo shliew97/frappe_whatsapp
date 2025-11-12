@@ -78,6 +78,17 @@ PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Hi! So sorry — the phone number you e
 REQUEST_PAPER_VOUCHER_ENDPOINT = "/api/method/healthland_pos.api.get_paper_voucher"
 FREE_MEMBERSHIP_REDEMPTION_ENDPOINT = "/api/method/healthland_pos.api.redeem_free_membership"
 
+PDPA_MESSAGE = "Thank you for joining SOMA Wellness Membership 🌸\n\nBefore we continue, please acknowledge the following:\n• Your details will be used for membership, booking and service updates.\n• You agree to receive wellness tips, exclusive offers and promotions from SOMA Wellness.\n• Your data is protected under the PDPA and will not be shared with others.\n\nBy replying “Agree”, you agree to the above Terms & Conditions."
+PDPA_BUTTON = [
+    {
+        "type": "reply",
+        "reply": {
+            "id": "agree-pdpa",
+            "title": "Agree" 
+        }
+    }
+]
+
 class WhatsAppMessage(Document):
     """Send whats app messages."""
 
@@ -194,6 +205,9 @@ class WhatsAppMessage(Document):
                 "latest_whatsapp_message_templates": None,
                 "latest_whatsapp_interaction_message_templates": None,
             }
+
+            if frappe.flags.agree_pdpa:
+                crm_lead_doc_dict["agree_pdpa"] = 1
 
             if frappe.flags.update_conversation_start_at or not crm_lead_doc.conversation_start_at:
                 crm_lead_doc_dict["conversation_start_at"] = get_datetime()
@@ -590,6 +604,10 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     #         send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
     #     else:
     #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
+
+    if "I want to register as a SOMA Wellness member" in message and not crm_lead_doc.agree_pdpa:
+        send_interactive_message(crm_lead_doc, whatsapp_id, PDPA_MESSAGE, PDPA_BUTTON)
+
     if "like to enjoy my SOM SOM membership rate for today" in message:
         handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
     elif "1 year SOM SOM membership code" in message:
@@ -715,6 +733,9 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
 def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_lead_doc=None):
     if not crm_lead_doc:
         crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+
+    if interactive_id == "agree-pdpa":
+        frappe.flags.agree_pdpa = True
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
 
