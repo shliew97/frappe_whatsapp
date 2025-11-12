@@ -736,6 +736,7 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
 
     if interactive_id == "agree-pdpa":
         frappe.flags.agree_pdpa = True
+        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text="You're now registered as a SOMA Wellness Member 🌿", queue="short", is_async=True)
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
 
