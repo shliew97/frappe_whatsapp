@@ -185,17 +185,20 @@ class WhatsAppMessage(Document):
                                     }).insert(ignore_permissions=True)
                                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=self.get("from"), text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
 
-            crm_lead_doc.reload()
+            crm_lead_doc_dict = {
+                "last_reply_at": get_datetime(),
+                "chat_close_at": add_to_date(get_datetime(), hours=22),
+                "last_message_from_me": False,
+                "sent_chat_closing_reminder": False,
+                "closed": 0,
+                "latest_whatsapp_message_templates": None,
+                "latest_whatsapp_interaction_message_templates": None,
+            }
+
             if frappe.flags.update_conversation_start_at or not crm_lead_doc.conversation_start_at:
-                crm_lead_doc.conversation_start_at = get_datetime()
-            crm_lead_doc.last_reply_at = get_datetime()
-            crm_lead_doc.chat_close_at = add_to_date(get_datetime(), hours=22)
-            crm_lead_doc.last_message_from_me = False
-            crm_lead_doc.sent_chat_closing_reminder = False
-            crm_lead_doc.closed = 0
-            crm_lead_doc.latest_whatsapp_message_templates = None
-            crm_lead_doc.latest_whatsapp_interaction_message_templates = None
-            crm_lead_doc.save(ignore_permissions=True)
+                crm_lead_doc_dict["conversation_start_at"] = get_datetime()
+
+            crm_lead_doc.db_set(crm_lead_doc_dict, notify=True)
 
             published=False
 
@@ -267,15 +270,20 @@ class WhatsAppMessage(Document):
             #         "note": "CRM Master Agent",
             #     }).insert(ignore_permissions=True)
 
-            crm_lead_doc.reload()
+            crm_lead_doc_dict = {
+                "last_reply_at": get_datetime(),
+                "last_message_from_me": True,
+                "sent_chat_closing_reminder": True,
+                "closed": 0,
+            }
+
             if (not crm_lead_doc.last_reply_by_user or (crm_lead_doc.last_reply_by_user and crm_lead_doc.last_reply_by_user != frappe.session.user)) and frappe.session.user != "Guest" and frappe.session.user != "Administrator":
-                crm_lead_doc.last_reply_by_user = frappe.session.user
+                crm_lead_doc_dict["last_reply_by_user"] = frappe.session.user
+                crm_lead_doc_dict["last_reply_by"] = frappe.db.get_value("User", frappe.session.user, "first_name")
             if not crm_lead_doc.conversation_start_at:
-                crm_lead_doc.conversation_start_at = get_datetime()
-            crm_lead_doc.closed = 0
-            crm_lead_doc.last_reply_at = get_datetime()
-            crm_lead_doc.last_message_from_me = True
-            crm_lead_doc.save(ignore_permissions=True)
+                crm_lead_doc_dict["conversation_start_at"] = get_datetime()
+
+            crm_lead_doc.db_set(crm_lead_doc_dict, notify=True)
 
     def send_template(self):
         """Send template."""
