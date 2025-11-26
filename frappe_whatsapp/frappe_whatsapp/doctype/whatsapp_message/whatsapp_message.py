@@ -1335,7 +1335,7 @@ def create_crm_tagging_assignment(crm_lead, tagging, status=None):
         })
 
 def handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id):
-    integration_settings = frappe.db.get_all("Integration Settings", filters={"name": "SOMA"}, pluck="name")
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
         url = integration_settings_doc.site_url + REQUEST_PAPER_VOUCHER_ENDPOINT
@@ -1361,7 +1361,7 @@ def handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, free_member_subscription_id):
-    integration_settings = frappe.db.get_all("Integration Settings", filters={"name": "SOMA"}, pluck="name")
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
         url = integration_settings_doc.site_url + FREE_MEMBERSHIP_REDEMPTION_ENDPOINT
