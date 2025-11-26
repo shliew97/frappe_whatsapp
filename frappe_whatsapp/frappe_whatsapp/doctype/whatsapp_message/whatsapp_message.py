@@ -77,6 +77,7 @@ PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Hi! So sorry — the phone number you e
 
 REQUEST_PAPER_VOUCHER_ENDPOINT = "/api/method/healthland_pos.api.get_paper_voucher"
 FREE_MEMBERSHIP_REDEMPTION_ENDPOINT = "/api/method/healthland_pos.api.redeem_free_membership"
+WHATSAPP_LOGIN_ENDPOINT = "/api/method/healthland_pos.api.whatsapp_login"
 
 PDPA_MESSAGE = "Thank you for joining SOMA Wellness Membership 🌸\n\nBefore we continue, please acknowledge the following:\n• Your details will be used for membership, booking and service updates.\n• You agree to receive wellness tips, exclusive offers and promotions from SOMA Wellness.\n• Your data is protected under the PDPA and will not be shared with others.\n\nBy replying “Agree”, you agree to the above Terms & Conditions."
 PDPA_BUTTON = [
@@ -611,8 +612,9 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     if "like to enjoy my SOM SOM membership rate for today" in message:
         handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
     elif "1 year SOM SOM membership code" in message:
-        free_member_subscription_id = message.split(":")[-1].strip().lower()
-        handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, free_member_subscription_id)
+        handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message)
+    elif "I would like to Login to" in message and "with this WhatsApp number" in message:
+        handle_whatsapp_login(crm_lead_doc, whatsapp_id, message)
     elif message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
@@ -1360,7 +1362,8 @@ def handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id):
         except requests.RequestException as e:
             frappe.throw(f"An error occurred: {e}")
 
-def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, free_member_subscription_id):
+def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
+    free_member_subscription_id = message.split(":")[-1].strip().lower()
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
@@ -1392,3 +1395,33 @@ def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, free_membe
             frappe.throw("Request timed out after 30 seconds")
         except requests.RequestException as e:
             frappe.throw(f"An error occurred: {e}")
+
+def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
+    parts = message.split(".")
+    if len(parts) == 3:
+        login_key = parts[1].strip()
+        integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
+        for integration_setting in integration_settings:
+            integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
+            url = integration_settings_doc.site_url + WHATSAPP_LOGIN_ENDPOINT
+
+            headers = {
+                "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
+                "Content-Type": "application/json"
+            }
+
+            request_body = {
+                "mobile_no": whatsapp_id,
+                "first_name": crm_lead_doc.lead_name,
+                "login_key": login_key,
+                "outlet": integration_settings_doc.outlet,
+            }
+
+            try:
+                response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
+                response.raise_for_status()
+                response_data = response.json()
+            except requests.Timeout:
+                frappe.throw("Request timed out after 30 seconds")
+            except requests.RequestException as e:
+                frappe.throw(f"An error occurred: {e}")
