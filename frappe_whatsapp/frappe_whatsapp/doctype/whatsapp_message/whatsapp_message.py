@@ -613,7 +613,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
     elif "1 year SOM SOM membership code" in message:
         handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message)
-    elif "I would like to Login to" in message and "with this WhatsApp number" in message:
+    elif message.isdigit() and len(message) == 6:
         handle_whatsapp_login(crm_lead_doc, whatsapp_id, message)
     elif message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
@@ -1397,31 +1397,28 @@ def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
-    parts = message.split(".")
-    if len(parts) == 3:
-        login_key = parts[1].strip()
-        integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
-        for integration_setting in integration_settings:
-            integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
-            url = integration_settings_doc.site_url + WHATSAPP_LOGIN_ENDPOINT
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
+    for integration_setting in integration_settings:
+        integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
+        url = integration_settings_doc.site_url + WHATSAPP_LOGIN_ENDPOINT
 
-            headers = {
-                "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
-                "Content-Type": "application/json"
-            }
+        headers = {
+            "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
+            "Content-Type": "application/json"
+        }
 
-            request_body = {
-                "mobile_no": whatsapp_id,
-                "first_name": crm_lead_doc.lead_name,
-                "login_key": login_key,
-                "outlet": integration_settings_doc.outlet,
-            }
+        request_body = {
+            "mobile_no": whatsapp_id,
+            "first_name": crm_lead_doc.lead_name,
+            "login_key": message,
+            "outlet": integration_settings_doc.outlet,
+        }
 
-            try:
-                response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
-                response.raise_for_status()
-                response_data = response.json()
-            except requests.Timeout:
-                frappe.throw("Request timed out after 30 seconds")
-            except requests.RequestException as e:
-                frappe.throw(f"An error occurred: {e}")
+        try:
+            response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
+            response.raise_for_status()
+            response_data = response.json()
+        except requests.Timeout:
+            frappe.throw("Request timed out after 30 seconds")
+        except requests.RequestException as e:
+            frappe.throw(f"An error occurred: {e}")
