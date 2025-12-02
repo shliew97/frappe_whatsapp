@@ -1410,7 +1410,7 @@ def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
         request_body = {
             "mobile_no": whatsapp_id,
             "first_name": crm_lead_doc.lead_name,
-            "login_key": message,
+            "otp": message,
             "outlet": integration_settings_doc.outlet,
         }
 
