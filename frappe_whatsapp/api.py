@@ -7,7 +7,7 @@ from frappe.utils.background_jobs import enqueue
 import time
 import json
 import re
-from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message_with_delay, send_image as _send_image, create_crm_lead_assignment, create_crm_tagging_assignment
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message_with_delay, send_image as _send_image, create_crm_lead_assignment, create_crm_tagging_assignment, send_interactive_cta_message
 
 @frappe.whitelist()
 def enqueue_send_whatsapp_template(whatsapp_message_template, whatsapp_template_queues):
@@ -377,6 +377,38 @@ def send_image(mobile_no, image_url, caption):
             crm_lead_doc.save(ignore_permissions=True)
 
         _send_image(crm_lead_doc, mobile_no, caption, image_url)
+
+        frappe.response["success"] = True
+        frappe.response["message"] = "Message successfully sent."
+    except Exception as e:
+        frappe.response["message"] = str(e)
+
+@frappe.whitelist()
+def send_cta_message(mobile_no, message, cta_label, cta_url):
+    try:
+        frappe.response["success"] = False
+
+        if len(message) >= 4096:
+            frappe.response["message"] = "Maximum length of message is 4096 characters."
+            return
+
+        reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
+
+        if not reference_name:
+            crm_lead_doc = frappe.new_doc("CRM Lead")
+            crm_lead_doc.lead_name = mobile_no
+            crm_lead_doc.first_name = mobile_no
+            crm_lead_doc.last_name = ""
+            crm_lead_doc.mobile_no = mobile_no
+            crm_lead_doc.whatsapp_message_templates = "hl_tech"
+            crm_lead_doc.insert(ignore_permissions=True)
+            reference_name = crm_lead_doc.name
+        else:
+            crm_lead_doc = frappe.get_doc(doctype, reference_name)
+            crm_lead_doc.whatsapp_message_templates = "hl_tech"
+            crm_lead_doc.save(ignore_permissions=True)
+
+        enqueue(method=send_interactive_cta_message, crm_lead_doc=crm_lead_doc, whatsapp_id=mobile_no, text=message, cta_label=cta_label, cta_url=cta_url, queue="short", is_async=True)
 
         frappe.response["success"] = True
         frappe.response["message"] = "Message successfully sent."

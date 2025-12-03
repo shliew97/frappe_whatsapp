@@ -613,6 +613,8 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
     elif "1 year SOM SOM membership code" in message:
         handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message)
+    elif "I would like to Login with this WhatsApp number" in message:
+        handle_whatsapp_login(crm_lead_doc, whatsapp_id, message)
     elif message.isdigit() and len(message) == 6:
         handle_whatsapp_login(crm_lead_doc, whatsapp_id, message)
     elif message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
@@ -748,7 +750,7 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
     #     send_interactive_message(crm_lead_doc, whatsapp_id, CHOOSE_PRODUCT_MESSAGE, CHOOSE_PRODUCT_BUTTON)
     # elif "voucher" in interactive_id:
     #     payment_url = generate_payment_url(crm_lead_doc, interactive_id.replace("-", " ").capitalize())
-    #     send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, payment_url)
+    #     send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, "Make Payment", payment_url)
     # elif "confirm-redeem-" in interactive_id and crm_lead_doc.action == "Redeem Voucher":
     #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
 
@@ -970,7 +972,7 @@ def send_interactive_message(crm_lead_doc, whatsapp_id, text, buttons):
 
     return False
 
-def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, url):
+def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta_url):
     whatsapp_settings = frappe.get_single("WhatsApp Settings")
 
     WHATSAPP_SEND_MESSAGE_URL = "{0}/{1}/{2}/messages".format(whatsapp_settings.url, whatsapp_settings.version, whatsapp_settings.phone_id)
@@ -989,8 +991,8 @@ def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, url):
             "action": {
                 "name": "cta_url",
                 "parameters": {
-                    "display_text": "Make Payment",
-                    "url": url
+                    "display_text": cta_label,
+                    "url": cta_url
                 }
             }
         }
@@ -1397,6 +1399,9 @@ def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
+    if "I would like to Login with this WhatsApp number" in message:
+        message = message.split("OTP:")[1].strip()
+
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
