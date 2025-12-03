@@ -972,6 +972,10 @@ def send_interactive_message(crm_lead_doc, whatsapp_id, text, buttons):
 
     return False
 
+def send_interactive_cta_message_with_delay(crm_lead_doc, whatsapp_id, text, cta_label, cta_url):
+    time.sleep(2)
+    send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta_url)
+
 def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta_url):
     whatsapp_settings = frappe.get_single("WhatsApp Settings")
 

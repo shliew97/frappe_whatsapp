@@ -7,7 +7,7 @@ from frappe.utils.background_jobs import enqueue
 import time
 import json
 import re
-from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message_with_delay, send_image as _send_image, create_crm_lead_assignment, create_crm_tagging_assignment, send_interactive_cta_message
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import send_message_with_delay, send_image as _send_image, create_crm_lead_assignment, create_crm_tagging_assignment, send_interactive_cta_message_with_delay
 
 @frappe.whitelist()
 def enqueue_send_whatsapp_template(whatsapp_message_template, whatsapp_template_queues):
@@ -408,7 +408,7 @@ def send_cta_message(mobile_no, message, cta_label, cta_url):
             crm_lead_doc.whatsapp_message_templates = "hl_tech"
             crm_lead_doc.save(ignore_permissions=True)
 
-        enqueue(method=send_interactive_cta_message, crm_lead_doc=crm_lead_doc, whatsapp_id=mobile_no, text=message, cta_label=cta_label, cta_url=cta_url, queue="short", is_async=True)
+        enqueue(method=send_interactive_cta_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=mobile_no, text=message, cta_label=cta_label, cta_url=cta_url, queue="short", is_async=True)
 
         frappe.response["success"] = True
         frappe.response["message"] = "Message successfully sent."
