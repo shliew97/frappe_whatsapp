@@ -1427,6 +1427,10 @@ def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
             response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
             response.raise_for_status()
             response_data = response.json()
+
+            if response_data.get("message") and response_data.get("cta_url") and response_data.get("cta_label"):
+                send_interactive_cta_message_with_delay(crm_lead_doc, whatsapp_id, response_data["message"], response_data["cta_label"], response_data["cta_url"])
+
         except requests.Timeout:
             frappe.throw("Request timed out after 30 seconds")
         except requests.RequestException as e:
