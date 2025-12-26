@@ -75,7 +75,7 @@ CHAT_CLOSING_MESSAGE = "🌟 Hello Dear Customer! 🌟\n\nJust a quick reminder 
 SUCCESSFULLY_NOTIFIED_CUSTOMER_MESSAGE = "✅ Noted!\nThe booking message has been successfully sent to the customer.\n\n👉 To send to another customer, simply submit a new phone number.\nYou can send phone numbers anytime!\n\nThank you! 🙏"
 PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Hi! So sorry — the phone number you entered seems to be invalid 😅\nKindly re-enter the number using the correct format:\n\n📌 Example:\n🇲🇾 Malaysia: 6012XXXXXXX\n🇸🇬 Singapore: 65XXXXXXX\n\nThank you for your cooperation! 🙏"
 
-REQUEST_PAPER_VOUCHER_ENDPOINT = "/api/method/healthland_pos.api.get_paper_voucher"
+REQUEST_MEMBERSHIP_RATE_ENDPOINT = "/api/method/healthland_pos.api.request_membership_rate"
 FREE_MEMBERSHIP_REDEMPTION_ENDPOINT = "/api/method/healthland_pos.api.redeem_free_membership"
 WHATSAPP_LOGIN_ENDPOINT = "/api/method/healthland_pos.api.whatsapp_login"
 
@@ -610,7 +610,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
         send_interactive_message(crm_lead_doc, whatsapp_id, PDPA_MESSAGE, PDPA_BUTTON)
 
     if "like to enjoy my SOM SOM membership rate for today" in message:
-        handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id)
+        handle_soma_membership_rate_request(crm_lead_doc, whatsapp_id)
     elif "1 year SOM SOM membership code" in message:
         handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message)
     elif "I would like to Login with this WhatsApp number" in message:
@@ -1016,7 +1016,7 @@ def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta
                 "reference_doctype": "CRM Lead",
                 "reference_name": crm_lead_doc.name,
                 "message_type": "Manual",
-                "message": "{0}\n\n{1}".format(text, url),
+                "message": "{0}\n\n{1}".format(text, cta_url),
                 "content_type": "text",
                 "to": whatsapp_id,
                 "message_id": message_id,
@@ -1342,11 +1342,11 @@ def create_crm_tagging_assignment(crm_lead, tagging, status=None):
             "tagging": "Unknown"
         })
 
-def handle_soma_paper_voucher_request(crm_lead_doc, whatsapp_id):
+def handle_soma_membership_rate_request(crm_lead_doc, whatsapp_id):
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
-        url = integration_settings_doc.site_url + REQUEST_PAPER_VOUCHER_ENDPOINT
+        url = integration_settings_doc.site_url + REQUEST_MEMBERSHIP_RATE_ENDPOINT
 
         headers = {
             "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
