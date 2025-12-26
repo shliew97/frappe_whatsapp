@@ -14,7 +14,8 @@ def webhook():
 	"""Meta webhook."""
 	if frappe.request.method == "GET":
 		return get()
-	enqueue(post, form_dict=dict(frappe.form_dict), queue="short", is_async=True)
+	post(frappe.form_dict)
+	#enqueue(post, form_dict=dict(frappe.form_dict), queue="short", is_async=True)
 	return
 
 
@@ -36,8 +37,14 @@ def post(form_dict):
 	frappe.get_doc({
 		"doctype": "WhatsApp Notification Log",
 		"template": "Webhook",
-		"meta_data": json.dumps(data)
+		"meta_data": frappe.as_json(data)
 	}).insert(ignore_permissions=True)
+
+	# frappe.get_doc({
+	# 	"doctype": "WhatsApp Notification Log",
+	# 	"template": "Webhook",
+	# 	"meta_data": json.dumps(data)
+	# }).insert(ignore_permissions=True)
 
 	messages = []
 	try:
@@ -49,6 +56,8 @@ def post(form_dict):
 
 	if messages:
 		for message in messages:
+			if message['from'] not in ["60165373622", "601136269063", "60178699823", "601116130615", "60166127386", "60124727268", "60173491791"]:
+				continue
 			message_type = message['type']
 			is_reply = True if message.get('context') and not message.get('context').get('forwarded') else False
 			is_forwarded = True if message.get('context') and message.get('context').get('forwarded') else False
