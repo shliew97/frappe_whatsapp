@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-31 22:00:43.173364",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "register_as_member_keyword",
+  "checkout_login_keyword",
+  "registration_keyword",
+  "reset_password_keyword",
+  "free_membership_redemption_keyword",
+  "request_membership_rate_keyword"
+ ],
+ "fields": [
+  {
+   "fieldname": "checkout_login_keyword",
+   "fieldtype": "Data",
+   "label": "Checkout Login Keyword"
+  },
+  {
+   "fieldname": "registration_keyword",
+   "fieldtype": "Data",
+   "label": "Registration Keyword"
+  },
+  {
+   "fieldname": "reset_password_keyword",
+   "fieldtype": "Data",
+   "label": "Reset Password Keyword"
+  },
+  {
+   "fieldname": "free_membership_redemption_keyword",
+   "fieldtype": "Data",
+   "label": "Free Membership Redemption Keyword"
+  },
+  {
+   "fieldname": "request_membership_rate_keyword",
+   "fieldtype": "Data",
+   "label": "Request Membership Rate Keyword"
+  },
+  {
+   "fieldname": "register_as_member_keyword",
+   "fieldtype": "Data",
+   "label": "Register as Member Keyword"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-12-31 22:10:23.444499",
+ "modified_by": "Administrator",
+ "module": "Frappe Whatsapp",
+ "name": "Integration Keyword Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
