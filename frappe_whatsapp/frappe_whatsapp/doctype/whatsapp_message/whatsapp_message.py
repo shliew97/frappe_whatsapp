@@ -17,6 +17,7 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain i
     get_rag_chain,
     is_booking_details_message,
     has_booking_intent,
+    detect_booking_intent_from_recent_context,
     extract_booking_details,
     handle_booking_api,
     get_pending_booking_data,
@@ -24,12 +25,16 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain i
     clear_pending_booking_data,
     format_missing_fields_message,
     generate_smart_missing_fields_prompt,
-    validate_booking_timeslot
+    validate_booking_timeslot,
+    validate_and_correct_outlet_info
 )
 
 def is_confirmation_message(message):
     """
     Check if the message is a confirmation (yes, confirm, correct, etc.)
+
+    IMPORTANT: This should ONLY match explicit, direct confirmations - not casual conversation.
+    Only returns True when the message is SHORT and PRIMARILY a confirmation response.
 
     Args:
         message: User's message text
@@ -45,11 +50,35 @@ def is_confirmation_message(message):
     ]
 
     message_lower = message.lower().strip()
-    return any(keyword in message_lower for keyword in confirmation_keywords)
+
+    # STRICT MATCHING: Only match if the message is short and direct
+    # This prevents casual conversation from triggering confirmation
+
+    # Case 1: Message is EXACTLY a confirmation keyword (e.g., "yes", "ok", "confirm")
+    if message_lower in confirmation_keywords:
+        return True
+
+    # Case 2: Message STARTS with confirmation keyword + punctuation (e.g., "yes!", "ok.", "yes please")
+    # Allow short follow-up text (under 30 characters total)
+    if len(message_lower) <= 30:
+        for keyword in confirmation_keywords:
+            # Check if message starts with keyword followed by space or punctuation
+            if (message_lower.startswith(keyword + ' ') or
+                message_lower.startswith(keyword + ',') or
+                message_lower.startswith(keyword + '.') or
+                message_lower.startswith(keyword + '!')):
+                return True
+
+    # REJECT: Long messages or messages where keyword appears in the middle
+    # (e.g., "I wanted to ask if yes means..." should NOT trigger confirmation)
+    return False
 
 def is_change_request(message):
     """
     Check if the message is requesting to change booking details
+
+    IMPORTANT: This should ONLY match explicit change requests - not casual conversation.
+    Only returns True when the message is SHORT and PRIMARILY a rejection/change response.
 
     Args:
         message: User's message text
@@ -64,7 +93,28 @@ def is_change_request(message):
     ]
 
     message_lower = message.lower().strip()
-    return any(keyword in message_lower for keyword in change_keywords)
+
+    # STRICT MATCHING: Only match if the message is short and direct
+    # This prevents casual conversation from triggering change flow
+
+    # Case 1: Message is EXACTLY a change keyword (e.g., "no", "change", "wrong")
+    if message_lower in change_keywords:
+        return True
+
+    # Case 2: Message STARTS with change keyword + punctuation (e.g., "no!", "change please")
+    # Allow short follow-up text (under 30 characters total)
+    if len(message_lower) <= 30:
+        for keyword in change_keywords:
+            # Check if message starts with keyword followed by space or punctuation
+            if (message_lower.startswith(keyword + ' ') or
+                message_lower.startswith(keyword + ',') or
+                message_lower.startswith(keyword + '.') or
+                message_lower.startswith(keyword + '!')):
+                return True
+
+    # REJECT: Long messages or messages where keyword appears in the middle
+    # (e.g., "I have no idea what this means" should NOT trigger change request)
+    return False
 
 
 def is_general_question(message):
@@ -98,6 +148,124 @@ def is_general_question(message):
     is_confirmation = is_confirmation_message(message) or is_change_request(message)
 
     return (has_question_mark or has_question_word) and not is_confirmation
+
+
+def analyze_confirmation_response_intent(message, pending_booking_data):
+    """
+    Use LLM to intelligently analyze user's response during booking confirmation.
+
+    Detects whether the user wants to:
+    1. Update specific fields with provided values (e.g., "no change name to john", "change time to 3pm")
+    2. Make changes but hasn't specified what (e.g., just "no" or "change")
+
+    Args:
+        message: User's message text
+        pending_booking_data: Current pending booking data
+
+    Returns:
+        dict: {
+            'intent': 'update_fields' or 'wants_to_change',
+            'field_updates': {field: value} if update_fields, or {} if wants_to_change
+        }
+    """
+    from langchain_openai import ChatOpenAI
+    import json
+
+    # Initialize LLM
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        api_key=frappe.conf.get("openai_api_key")
+    )
+
+    # Create prompt for intent analysis
+    prompt = f"""You are analyzing a user's response during a booking confirmation flow.
+
+CONTEXT:
+The user was shown their booking details and asked to confirm (Yes/No).
+Current booking data:
+{json.dumps(pending_booking_data, indent=2, default=str)}
+
+USER'S RESPONSE:
+"{message}"
+
+YOUR TASK:
+Determine the user's intent:
+
+1. UPDATE_FIELDS INTENT - User wants to CHANGE specific booking fields and provides new values
+   Examples:
+   - "no change the name to duxton" → Update customer_name to "duxton"
+   - "change time to 3pm" → Update timeslot to "3pm"
+   - "update outlet to KLCC" → Update outlet to "KLCC"
+   - "no change name to john and time to 2pm" → Update customer_name to "john" and timeslot to "2pm"
+   - "the name should be david" → Update customer_name to "david"
+
+2. WANTS_TO_CHANGE INTENT - User wants to make changes but hasn't specified what to update
+   Examples: "no", "nope", "wrong", "incorrect", "not correct", "change", "edit"
+
+IMPORTANT RULES:
+- If the message contains specific field values to update, classify as UPDATE_FIELDS
+- Only classify as WANTS_TO_CHANGE if the user is rejecting without providing new field information
+- For UPDATE_FIELDS, extract all field updates mentioned
+
+AVAILABLE FIELDS YOU CAN UPDATE:
+- customer_name: Customer's name
+- phone: Phone number
+- outlet: Outlet location
+- booking_date: Preferred date
+- timeslot: Preferred time
+- pax: Number of people
+- treatment_type: Type of treatment
+- session: Duration in minutes
+- preferred_masseur: Preferred therapist
+
+OUTPUT FORMAT (JSON only, no explanation):
+{{
+    "intent": "update_fields" or "wants_to_change",
+    "field_updates": {{
+        "field_name": "new_value",
+        ...
+    }}
+}}
+
+If intent is "wants_to_change", field_updates should be empty {{}}.
+If intent is "update_fields", field_updates should contain the extracted updates.
+"""
+
+    try:
+        # Call LLM
+        response = llm.invoke(prompt)
+        result_text = response.content.strip()
+
+        # Parse JSON response
+        # Remove markdown code blocks if present
+        if result_text.startswith("```"):
+            result_text = result_text.split("```")[1]
+            if result_text.startswith("json"):
+                result_text = result_text[4:]
+            result_text = result_text.strip()
+
+        result = json.loads(result_text)
+
+        frappe.log_error(
+            "Confirmation Response Intent Analysis",
+            f"User message: {message}\n"
+            f"LLM analysis:\n{json.dumps(result, indent=2)}"
+        )
+
+        return result
+
+    except Exception as e:
+        frappe.log_error(
+            "Intent Analysis Error",
+            f"Error analyzing confirmation response: {str(e)}\n"
+            f"Message: {message}"
+        )
+        # Default to wants_to_change if analysis fails
+        return {
+            'intent': 'wants_to_change',
+            'field_updates': {}
+        }
 
 PAYMENT_STATUS_MAPPING = {
     "00": "Completed",
@@ -653,9 +821,6 @@ def handle_text_message_ai(message, whatsapp_id, customer_name, crm_lead_doc=Non
     Every message goes through the LangChain RAG chain for intelligent responses.
     """
 
-    # Initialize flag for sending confirmation reminder
-    send_confirmation_reminder = False
-
     try:
         print(f"AI message handler started for message: {message[:50]}...", "WhatsApp AI Debug")
 
@@ -739,8 +904,6 @@ If you'd like to make a new booking in the future, just let us know! 💚"""
                     f"Message: {message}\n"
                     f"Keeping awaiting_update_confirmation=True and answering question via RAG"
                 )
-                # Set flag to send reminder after answering the question
-                send_confirmation_reminder = True
                 # Skip all booking logic - fall through to RAG chain
                 # The awaiting_update_confirmation flag stays True for next message
 
@@ -935,7 +1098,7 @@ Please let me know what you'd like to update! 😊"""
 
 Is this correct? Please reply:
 ✅ *Yes* to confirm update
-❌ *No* to cancel"""
+❌ *No* to remain unchanged"""
 
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=update_confirmation_msg, queue="short", is_async=True)
 
@@ -960,19 +1123,20 @@ Is this correct? Please reply:
 
         # PRIORITY 3: Normal booking flow (new bookings)
         # Check if we should trigger booking flow:
-        # 1. User expresses booking intent (e.g., "I want to book")
+        # 1. User expresses booking intent in LAST 3 MESSAGES (e.g., "I want to book")
         # 2. Message contains specific booking details
         # 3. We have pending booking data from previous interaction
         # 4. IMPORTANT: Allow users to ask general questions even with pending booking data
 
-        user_wants_to_book = has_booking_intent(message)
+        # Use new intent detection that only checks last 3 messages to avoid false positives
+        user_wants_to_book = detect_booking_intent_from_recent_context(chat_history, message)
         has_specific_details = is_booking_details_message(message)
         has_pending_data = bool(pending_data and len(pending_data) > 0 and not booking_was_confirmed)
         is_asking_question = is_general_question(message)
 
         frappe.log_error(
             "Booking Flow Debug",
-            f"Booking triggers - Intent: {user_wants_to_book}, Details: {has_specific_details}, Pending: {has_pending_data}, Question: {is_asking_question}"
+            f"Booking triggers - Intent (last 3 msgs): {user_wants_to_book}, Details: {has_specific_details}, Pending: {has_pending_data}, Question: {is_asking_question}"
         )
 
         # If user is asking a general question, skip booking flow and let RAG handle it
@@ -1082,32 +1246,58 @@ Is this correct? Please reply:
                         f"Message: {message}\n"
                         f"Keeping awaiting_confirmation=True and answering question via RAG"
                     )
-                    # Set flag to send reminder after answering the question
-                    # This will be checked later when sending RAG response
-                    send_confirmation_reminder = True
                     # Skip all booking logic - fall through to RAG chain
                     # The awaiting_confirmation flag stays True for next message
 
                 elif awaiting_confirmation:
                     # We already showed details, now check user's response
-                    if is_confirmation_message(message):
-                        # User confirmed - proceed with booking
-                        frappe.log_error("Booking Confirmation", f"User confirmed booking for {whatsapp_id}")
+                    # IMPORTANT: Only treat as confirmation/change if message is CLEARLY about booking
+                    # Not if it's asking about something else (e.g., "ya share me the link")
 
-                        # CRITICAL SAFETY CHECK: Verify that awaiting_confirmation was previously set
-                        # This ensures confirmation was shown before calling API
-                        if not pending_data or not pending_data.get('awaiting_confirmation'):
-                            frappe.log_error(
-                                "⚠️ API CALL BLOCKED ⚠️",
-                                f"CRITICAL: Attempted to call API without proper confirmation!\n"
-                                f"awaiting_confirmation flag not found in pending_data\n"
-                                f"Showing confirmation now to be safe"
-                            )
-                            # Show confirmation now as safety measure
-                            booking_data['awaiting_confirmation'] = True
-                            save_pending_booking_data(crm_lead_doc, booking_data)
+                    message_lower = message.lower().strip()
 
-                            safety_msg = f"""📋 Please confirm your booking details before we proceed:
+                    # Check if message is clearly about something OTHER than booking confirmation
+                    # e.g., "ya share me the link", "yes tell me about packages", etc.
+                    non_confirmation_patterns = [
+                        'link', 'share', 'send', 'tell me', 'what', 'where', 'how', 'when',
+                        'outlet', 'location', 'address', 'price', 'package', 'promotion',
+                        'discount', 'treatment', 'massage', 'service', 'available'
+                    ]
+
+                    # If message contains these keywords, it's likely NOT a booking confirmation
+                    is_about_other_topic = any(pattern in message_lower for pattern in non_confirmation_patterns)
+
+                    if is_about_other_topic:
+                        # User is asking about something else, not confirming booking
+                        # Treat as general question and answer via RAG
+                        frappe.log_error(
+                            "Non-Confirmation Message During Confirmation Wait",
+                            f"User said something that's not a booking confirmation: {message}\n"
+                            f"Treating as general question and keeping awaiting_confirmation=True"
+                        )
+                        # Skip all booking confirmation logic - fall through to RAG chain
+                        # awaiting_confirmation stays True for when they're ready to confirm
+
+                    else:
+                        # Message is NOT about other topics, so check if it's a confirmation response
+                        if is_confirmation_message(message):
+                            # User confirmed - proceed with booking
+                            frappe.log_error("Booking Confirmation", f"User confirmed booking for {whatsapp_id}")
+
+                            # CRITICAL SAFETY CHECK: Verify that awaiting_confirmation was previously set
+                            # This ensures confirmation was shown before calling API
+                            if not pending_data or not pending_data.get('awaiting_confirmation'):
+                                frappe.log_error(
+                                    "⚠️ API CALL BLOCKED ⚠️",
+                                    f"CRITICAL: Attempted to call API without proper confirmation!\n"
+                                    f"awaiting_confirmation flag not found in pending_data\n"
+                                    f"Showing confirmation now to be safe"
+                                )
+                                # Show confirmation now as safety measure
+                                booking_data['awaiting_confirmation'] = True
+                                save_pending_booking_data(crm_lead_doc, booking_data)
+
+                                safety_msg = f"""📋 Please confirm your booking details before we proceed:
 
 - Name: {booking_data.get('customer_name')}
 - Phone: {booking_data.get('phone')}
@@ -1123,19 +1313,19 @@ Is everything correct? Please reply:
 ✅ *Yes* to confirm
 ❌ *No* to make changes"""
 
-                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=safety_msg, queue="short", is_async=True)
-                            return
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=safety_msg, queue="short", is_async=True)
+                                return
 
-                        # Log booking details one more time before API call for verification
-                        frappe.log_error(
-                            "📋 CALLING API - BOOKING DETAILS",
-                            f"User has confirmed. Calling booking API with:\n"
-                            f"{json.dumps(booking_data, indent=2, default=str)}\n"
-                            f"Confirmation was previously shown: {pending_data.get('awaiting_confirmation') == True}"
-                        )
+                            # Log booking details one more time before API call for verification
+                            frappe.log_error(
+                                "📋 CALLING API - BOOKING DETAILS",
+                                f"User has confirmed. Calling booking API with:\n"
+                                f"{json.dumps(booking_data, indent=2, default=str)}\n"
+                                f"Confirmation was previously shown: {pending_data.get('awaiting_confirmation') == True}"
+                            )
 
-#                         # Send "Processing..." message showing booking details one more time
-#                         processing_msg = f"""⏳ Processing your booking...
+#                             # Send "Processing..." message showing booking details one more time
+#                             processing_msg = f"""⏳ Processing your booking...
 
 # 📋 Booking Details Being Submitted:
 # - Name: {booking_data.get('customer_name')}
@@ -1149,30 +1339,30 @@ Is everything correct? Please reply:
 
 # Please wait while we confirm your appointment..."""
 
-#                         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=processing_msg, queue="short", is_async=True)
+#                             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=processing_msg, queue="short", is_async=True)
 
-#                         # Small delay to ensure processing message is sent before API call
-#                         import time
-#                         time.sleep(1)
+#                             # Small delay to ensure processing message is sent before API call
+#                             import time
+#                             time.sleep(1)
 
-                        try:
-                            # Call the MOCK booking API (for POC/simulation)
-                            from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import handle_booking_api_mock
-                            api_response = handle_booking_api_mock(crm_lead_doc, whatsapp_id, booking_data)
-                            print(f"Mock Booking API response: {json.dumps(api_response, default=str)}", "WhatsApp Booking Debug")
+                            try:
+                                # Call the MOCK booking API (for POC/simulation)
+                                from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import handle_booking_api_mock
+                                api_response = handle_booking_api_mock(crm_lead_doc, whatsapp_id, booking_data)
+                                print(f"Mock Booking API response: {json.dumps(api_response, default=str)}", "WhatsApp Booking Debug")
 
-                            # Get booking reference from mock API response
-                            booking_reference = api_response.get('data', {}).get('booking_reference', f"BKG{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}")
+                                # Get booking reference from mock API response
+                                booking_reference = api_response.get('data', {}).get('booking_reference', f"BKG{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}")
 
-                            # Save confirmed booking data (don't clear it - needed for update/cancel)
-                            confirmed_booking_data = booking_data.copy()
-                            confirmed_booking_data['confirmed'] = True
-                            confirmed_booking_data['booking_reference'] = booking_reference
-                            confirmed_booking_data['confirmed_at'] = frappe.utils.now_datetime().isoformat()
-                            save_pending_booking_data(crm_lead_doc, confirmed_booking_data)
+                                # Save confirmed booking data (don't clear it - needed for update/cancel)
+                                confirmed_booking_data = booking_data.copy()
+                                confirmed_booking_data['confirmed'] = True
+                                confirmed_booking_data['booking_reference'] = booking_reference
+                                confirmed_booking_data['confirmed_at'] = frappe.utils.now_datetime().isoformat()
+                                save_pending_booking_data(crm_lead_doc, confirmed_booking_data)
 
-                            # Always build booking details summary to show to customer
-                            booking_summary = f"""📋 Your Booking Details:
+                                # Always build booking details summary to show to customer
+                                booking_summary = f"""📋 Your Booking Details:
 - Booking Reference: {booking_reference}
 - Name: {booking_data.get('customer_name')}
 - Phone: {booking_data.get('phone')}
@@ -1186,48 +1376,98 @@ Is everything correct? Please reply:
 - 3rd Party Voucher: {booking_data.get('third_party_voucher', 'N/A')}
 - Using Package: {booking_data.get('using_package', 'N/A')}"""
 
-                            # Combine API response message (if any) with booking details
-                            if api_response and api_response.get('message'):
-                                confirmation_msg = f"✅ Booking confirmed!\n\n{booking_summary}\n\n{api_response.get('message')}\n\n💡 Tip: You can update or cancel your booking anytime by sending us a message!\n\nThank you for choosing HealthLand! 💚"
+                                # Combine API response message (if any) with booking details
+                                if api_response and api_response.get('message'):
+                                    confirmation_msg = f"✅ Booking confirmed!\n\n{booking_summary}\n\n{api_response.get('message')}\n\n💡 Tip: You can update or cancel your booking anytime by sending us a message!\n\nThank you for choosing HealthLand! 💚"
+                                else:
+                                    confirmation_msg = f"✅ Your booking has been submitted!\n\n{booking_summary}\n\nWe'll confirm your appointment shortly.\n\n💡 Tip: You can update or cancel your booking anytime by sending us a message!\n\nThank you! 💚"
+
+                                print(confirmation_msg)
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=str(confirmation_msg), queue="short", is_async=True)
+
+                                frappe.log_error(
+                                    "WhatsApp Booking Success",
+                                    f"Booking processed successfully\nCustomer: {customer_name}\nDetails: {json.dumps(booking_data, indent=2, default=str)}"
+                                )
+                                return  # Exit after handling booking
+
+                            except Exception as booking_error:
+                                frappe.log_error(
+                                    "WhatsApp Booking Error",
+                                    f"Booking API error: {str(booking_error)}\nTraceback: {frappe.get_traceback()}"
+                                )
+                                # Clear pending data on error
+                                clear_pending_booking_data(crm_lead_doc)
+                                # Send error message to customer
+                                error_msg = "❌ Sorry, there was an error processing your booking. Please contact our outlet directly or try again later. Thank you for your patience! 🙏"
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
+                                return
+
+                        elif is_change_request(message):
+                            # User's response contains change-related keywords (e.g., "no", "change", "wrong")
+                            # Use LLM to intelligently determine if they want to:
+                            # 1. Update specific fields with provided values (e.g., "no change name to duxton"), OR
+                            # 2. Make changes but haven't specified what (e.g., just "no")
+
+                            frappe.log_error("Booking Confirmation", f"Analyzing user intent for change request: {whatsapp_id}")
+
+                            intent_analysis = analyze_confirmation_response_intent(message, booking_data)
+                            intent = intent_analysis.get('intent')
+                            field_updates = intent_analysis.get('field_updates', {})
+
+                            if intent == 'update_fields' and field_updates:
+                                # User provided specific field updates - apply them automatically
+                                frappe.log_error(
+                                    "Field Updates Detected",
+                                    f"User wants to update fields:\n{json.dumps(field_updates, indent=2)}"
+                                )
+
+                                # Apply field updates to booking data
+                                for field, new_value in field_updates.items():
+                                    if field in booking_data:
+                                        old_value = booking_data.get(field)
+                                        booking_data[field] = new_value
+                                        frappe.log_error(
+                                            "Field Updated",
+                                            f"Updated {field}: '{old_value}' → '{new_value}'"
+                                        )
+
+                                # Keep awaiting_confirmation = True, show updated details
+                                booking_data['awaiting_confirmation'] = True
+                                save_pending_booking_data(crm_lead_doc, booking_data)
+
+                                # Show updated booking details
+                                updated_summary = f"""✅ Updated! Here are your revised booking details:
+
+- Name: {booking_data.get('customer_name')}
+- Phone: {booking_data.get('phone')}
+- Outlet: {booking_data.get('outlet')}
+- Date: {booking_data.get('booking_date')}
+- Time: {booking_data.get('timeslot')}
+- Pax: {booking_data.get('pax')}
+- Treatment: {booking_data.get('treatment_type')}
+- Duration: {booking_data.get('session')} minutes
+- Preferred Masseur: {booking_data.get('preferred_masseur')}
+- 3rd Party Voucher: {booking_data.get('third_party_voucher', 'N/A')}
+- Using Package: {booking_data.get('using_package', 'N/A')}
+
+Is everything correct now? Please reply:
+✅ *Yes* to confirm
+❌ *No* to make more changes"""
+
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=updated_summary, queue="short", is_async=True)
+                                return
+
                             else:
-                                confirmation_msg = f"✅ Your booking has been submitted!\n\n{booking_summary}\n\nWe'll confirm your appointment shortly.\n\n💡 Tip: You can update or cancel your booking anytime by sending us a message!\n\nThank you! 💚"
+                                # User wants to make changes but didn't provide specific field values
+                                # Ask them what they'd like to change
+                                frappe.log_error("Booking Confirmation", f"User wants to make changes (no specific updates provided) for {whatsapp_id}")
+                                booking_data['awaiting_confirmation'] = False
+                                save_pending_booking_data(crm_lead_doc, booking_data)
 
-                            print(confirmation_msg)
-                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=str(confirmation_msg), queue="short", is_async=True)
-
-                            frappe.log_error(
-                                "WhatsApp Booking Success",
-                                f"Booking processed successfully\nCustomer: {customer_name}\nDetails: {json.dumps(booking_data, indent=2, default=str)}"
-                            )
-                            return  # Exit after handling booking
-
-                        except Exception as booking_error:
-                            frappe.log_error(
-                                "WhatsApp Booking Error",
-                                f"Booking API error: {str(booking_error)}\nTraceback: {frappe.get_traceback()}"
-                            )
-                            # Clear pending data on error
-                            clear_pending_booking_data(crm_lead_doc)
-                            # Send error message to customer
-                            error_msg = "❌ Sorry, there was an error processing your booking. Please contact our outlet directly or try again later. Thank you for your patience! 🙏"
-                            enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
-                            return
-
-                    elif is_change_request(message):
-                        # User wants to change something - remove confirmation flag and ask what to change
-                        frappe.log_error("Booking Confirmation", f"User wants to change booking details for {whatsapp_id}")
-                        booking_data['awaiting_confirmation'] = False
-                        save_pending_booking_data(crm_lead_doc, booking_data)
-
-                        change_msg = "No problem! What would you like to change? Please let me know which details need to be updated. 😊"
-                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=change_msg, queue="short", is_async=True)
-                        return
-
-                    else:
-                        # Unclear response - ask again
-                        reminder_msg = "Please reply with 'Yes' to confirm your booking, or 'No' if you'd like to make changes. 🙏"
-                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=reminder_msg, queue="short", is_async=True)
-                        return
+                                change_msg = "No problem! What would you like to change? Please let me know which details need to be updated. 😊"
+                                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=change_msg, queue="short", is_async=True)
+                                return
 
                 else:
                     # First time all fields are complete - show details and ask for confirmation
@@ -1300,21 +1540,33 @@ Is everything correct? Please reply:
         print(f"AI response received: {ai_answer[:100]}...", "WhatsApp AI Debug")
 
         if ai_answer:
+            # Clean markdown formatting and remove duplicate links
+            from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import (
+                clean_message_formatting,
+                detect_and_remove_hallucinated_addresses,
+                remove_soma_mentions
+            )
+            ai_answer = clean_message_formatting(ai_answer)
+            print(f"AI response cleaned (formatting): {ai_answer[:100]}...", "WhatsApp AI Debug")
+
+            # Remove any hallucinated addresses, phone numbers, or specific details
+            ai_answer = detect_and_remove_hallucinated_addresses(ai_answer)
+            print(f"AI response cleaned (hallucinations): {ai_answer[:100]}...", "WhatsApp AI Debug")
+
+            # Remove SOMA mentions unless user asked about SOMA
+            ai_answer = remove_soma_mentions(ai_answer, message)
+            print(f"AI response cleaned (SOMA filter): {ai_answer[:100]}...", "WhatsApp AI Debug")
+
+            # Validate and correct outlet information against outlet_data.json
+            ai_answer = validate_and_correct_outlet_info(ai_answer)
+            print(f"AI response validated (outlet info): {ai_answer[:100]}...", "WhatsApp AI Debug")
+
             # Send AI response back to user
             print("Enqueuing AI response", "WhatsApp AI Debug")
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=ai_answer, queue="short", is_async=True)
 
-            # ONLY send reminder if user asked a question during confirmation waiting period
-            # (Not on every message when awaiting_confirmation is True)
-            if send_confirmation_reminder:
-                # Determine which type of confirmation we're waiting for
-                if pending_data and pending_data.get('awaiting_update_confirmation'):
-                    reminder_msg = "📌 Don't forget: You have a pending booking update waiting for confirmation. Reply 'Yes' to confirm the update, or 'No' to cancel."
-                else:
-                    reminder_msg = "📌 Don't forget: You have a pending booking waiting for confirmation. Reply 'Yes' when you're ready to confirm, or 'No' to make changes."
-
-                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=reminder_msg, queue="short", is_async=True)
-                frappe.log_error("Confirmation Reminder Sent", f"Sent reminder after answering question for {whatsapp_id}")
+            # Removed: Confirmation reminder after answering questions
+            # Users don't want to be reminded about pending bookings after asking questions
 
             # Log the interaction for monitoring
             print(

@@ -56,7 +56,7 @@ def post(form_dict):
 
 	if messages:
 		for message in messages:
-			if message['from'] not in ["60165373622", "601136269063", "60178699823", "601116130615", "60166127386", "60124727268", "60173491791"]:
+			if message['from'] not in ["601136269063", "60178699823", "601116130615", "60166127386", "60124727268", "60173491791"]:
 				continue
 			message_type = message['type']
 			is_reply = True if message.get('context') and not message.get('context').get('forwarded') else False

@@ -1,5 +1,5 @@
 
-import frappe, requests, json, re
+import frappe, requests, json, re, os
 from datetime import datetime, timedelta
 from crm.api.whatsapp import get_whatsapp_messages
 # LangChain imports for AI/RAG functionality
@@ -25,6 +25,497 @@ def clear_rag_chain_cache():
     _rag_chain_cache = None
     frappe.log_error("RAG chain cache cleared", "WhatsApp AI Debug")
     return "RAG chain cache cleared successfully"
+
+def load_outlet_data():
+    """
+    Load outlet data from the outlet_data.json file.
+    This contains accurate, structured information about all outlets including addresses,
+    Google Maps links, and Waze links.
+
+    Returns:
+        list: List of outlet dictionaries
+    """
+    try:
+        # Get the directory where this file is located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        outlet_data_path = os.path.join(current_dir, 'outlet_data.json')
+
+        # Load the JSON file
+        with open(outlet_data_path, 'r', encoding='utf-8') as f:
+            outlet_data = json.load(f)
+
+        frappe.log_error("Outlet Data Loaded", f"Successfully loaded {len(outlet_data)} outlets from outlet_data.json")
+        return outlet_data
+    except Exception as e:
+        frappe.log_error("Outlet Data Load Error", f"Failed to load outlet_data.json: {str(e)}\n{frappe.get_traceback()}")
+        return []
+
+
+def validate_and_correct_outlet_info(ai_response):
+    """
+    Validate AI response against outlet_data.json and correct any wrong addresses or links.
+
+    This function:
+    1. Detects if the response contains outlet information
+    2. Extracts outlet names mentioned in the response
+    3. Verifies addresses, Google Maps links, and Waze links against outlet_data.json
+    4. Replaces incorrect information with correct data from outlet_data.json
+
+    Args:
+        ai_response: The AI-generated response text
+
+    Returns:
+        str: Corrected response with verified outlet information
+    """
+    try:
+        # Check if response contains outlet-related information
+        outlet_indicators = ['address', 'google map', 'waze', 'outlet', 'location', 'direction']
+        has_outlet_info = any(indicator in ai_response.lower() for indicator in outlet_indicators)
+
+        if not has_outlet_info:
+            # No outlet information to validate
+            return ai_response
+
+        frappe.log_error("Outlet Validation", "Detected outlet information in response - validating against outlet_data.json")
+
+        # Load outlet data
+        outlets = load_outlet_data()
+        if not outlets:
+            frappe.log_error("Outlet Validation", "No outlet data available - returning response as-is")
+            return ai_response
+
+        corrected_response = ai_response
+        corrections_made = []
+
+        # For each outlet in database, check if it's mentioned in the response
+        for outlet in outlets:
+            outlet_name = outlet.get('Outlets Name', '')
+            correct_address = outlet.get('Address', '')
+            correct_google_map = outlet.get('Google Map Link', '')
+            correct_waze = outlet.get('Waze Link', '')
+
+            if not outlet_name:
+                continue
+
+            # Extract key parts of outlet name for matching
+            # e.g., "Elite HealthLand @ Puchong Jaya" → look for "Puchong Jaya" or "Elite HealthLand"
+            outlet_name_lower = outlet_name.lower()
+
+            # Check if this outlet is mentioned in the response
+            if outlet_name_lower not in corrected_response.lower():
+                # Try matching by location part (after @)
+                if '@' in outlet_name:
+                    location_part = outlet_name.split('@')[1].strip()
+                    if location_part.lower() not in corrected_response.lower():
+                        continue
+                else:
+                    continue
+
+            # This outlet is mentioned - validate its information
+            frappe.log_error("Outlet Validation", f"Found mention of outlet: {outlet_name}")
+
+            # Use LLM to extract the address/links associated with this outlet in the response
+            from langchain_openai import ChatOpenAI
+
+            llm = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0,
+                api_key=frappe.conf.get("openai_api_key")
+            )
+
+            validation_prompt = f"""You are validating outlet information in a customer response.
+
+OUTLET NAME: {outlet_name}
+
+CORRECT INFORMATION FROM DATABASE:
+- Address: {correct_address}
+- Google Map Link: {correct_google_map}
+- Waze Link: {correct_waze}
+
+AI RESPONSE:
+{corrected_response}
+
+YOUR TASK:
+1. Find where this outlet is mentioned in the AI response
+2. Check if the address, Google Map link, and Waze link in the response match the CORRECT information above
+3. If ANY information is wrong or missing, replace it with the correct information
+
+IMPORTANT RULES:
+- Copy addresses EXACTLY character-by-character from the correct information
+- Copy links EXACTLY character-by-character from the correct information
+- Do NOT modify the tone or style of the response
+- Only fix incorrect outlet information for this specific outlet
+- If the outlet is not actually mentioned or has no information to correct, return the response unchanged
+
+OUTPUT: Return the corrected response text only, no explanations."""
+
+            try:
+                validation_result = llm.invoke(validation_prompt)
+                corrected_response = validation_result.content.strip()
+
+                # Check if correction was made
+                if corrected_response != ai_response:
+                    corrections_made.append(f"Corrected information for: {outlet_name}")
+                    frappe.log_error(
+                        "Outlet Info Corrected",
+                        f"Fixed outlet information for: {outlet_name}\n"
+                        f"Correct Address: {correct_address}\n"
+                        f"Correct Google Map: {correct_google_map}\n"
+                        f"Correct Waze: {correct_waze}"
+                    )
+            except Exception as e:
+                frappe.log_error("Outlet Validation Error", f"Error validating {outlet_name}: {str(e)}")
+                continue
+
+        if corrections_made:
+            frappe.log_error(
+                "Outlet Validation Complete",
+                f"Made corrections:\n" + "\n".join(corrections_made)
+            )
+        else:
+            frappe.log_error("Outlet Validation Complete", "No corrections needed - all information is accurate")
+
+        return corrected_response
+
+    except Exception as e:
+        frappe.log_error(
+            "Outlet Validation Error",
+            f"Error in validate_and_correct_outlet_info: {str(e)}\n{frappe.get_traceback()}"
+        )
+        # Return original response if validation fails
+        return ai_response
+
+def search_outlet_data(query):
+    """
+    Search for outlet information in the structured outlet_data.json.
+    This should be used BEFORE vector search for outlet-related queries.
+
+    By default, only returns HealthLand outlets unless user specifically asks for SOMA.
+
+    Args:
+        query: The user's question (e.g., "where is KD outlet?", "puchong location")
+
+    Returns:
+        str: Formatted outlet information if found, empty string otherwise
+    """
+    try:
+        outlets = load_outlet_data()
+        if not outlets:
+            return ""
+
+        query_lower = query.lower()
+
+        # Check if user is specifically asking about SOMA
+        is_soma_query = 'soma' in query_lower
+
+        # Filter outlets by brand unless SOMA is specifically mentioned
+        if not is_soma_query:
+            # Only show HealthLand outlets (filter out SOMA)
+            outlets = [o for o in outlets if o.get('Brand', '').lower() != 'soma wellness']
+            frappe.log_error("Outlet Filter", f"Filtered to HealthLand outlets only (user didn't ask for SOMA)")
+        else:
+            # User asked for SOMA, only show SOMA outlets
+            outlets = [o for o in outlets if o.get('Brand', '').lower() == 'soma wellness']
+            frappe.log_error("Outlet Filter", f"Filtered to SOMA Wellness outlets only (user asked for SOMA)")
+
+        # Extract potential outlet name from query
+        # Common patterns: "KD", "Kota Damansara", "Puchong", "KLCC", etc.
+        outlet_keywords = []
+
+        # Check for direct outlet name mentions
+        for outlet in outlets:
+            outlet_name = outlet.get('Outlets Name', '').lower()
+            # Extract key parts (e.g., "Kota Damansara" from "SOMA Wellness @ Kota Damansara")
+            if '@' in outlet_name:
+                location_part = outlet_name.split('@')[1].strip()
+                outlet_keywords.append((location_part, outlet))
+
+                # Also check for short forms (e.g., "KD" for "Kota Damansara")
+                if 'kota damansara' in location_part and ('kd' in query_lower or 'kota damansara' in query_lower):
+                    outlet_keywords.append((location_part, outlet))
+                elif 'klcc' in location_part and 'klcc' in query_lower:
+                    outlet_keywords.append((location_part, outlet))
+                elif 'bukit bintang' in location_part and ('bb' in query_lower or 'bukit bintang' in query_lower):
+                    outlet_keywords.append((location_part, outlet))
+
+        # Find matching outlets
+        matched_outlets = []
+        for keyword, outlet in outlet_keywords:
+            # Check if query mentions this outlet
+            if keyword in query_lower or any(word in query_lower for word in keyword.split()):
+                matched_outlets.append(outlet)
+
+        # If no specific match, check for general location queries
+        if not matched_outlets:
+            for outlet in outlets:
+                address = outlet.get('Address', '').lower()
+                outlet_name = outlet.get('Outlets Name', '').lower()
+
+                # Check if any word from query appears in outlet name or address
+                query_words = [w for w in query_lower.split() if len(w) > 3]  # Skip short words
+                for word in query_words:
+                    if word in outlet_name or word in address:
+                        if outlet not in matched_outlets:
+                            matched_outlets.append(outlet)
+                        break
+
+        # Return formatted information about matched outlets
+        if matched_outlets:
+            result = ""
+            for outlet in matched_outlets[:3]:  # Limit to top 3 matches
+                result += f"\n\nOutlet: {outlet.get('Outlets Name', 'N/A')}\n"
+                result += f"Address: {outlet.get('Address', 'N/A')}\n"
+                if outlet.get('Google Map Link'):
+                    result += f"Google Maps: {outlet.get('Google Map Link')}\n"
+                if outlet.get('Waze Link'):
+                    result += f"Waze: {outlet.get('Waze Link')}\n"
+                result += f"Brand: {outlet.get('Brand', 'N/A')}\n"
+                result += f"Category: {outlet.get('Category', 'N/A')}\n"
+
+            frappe.log_error(
+                "Outlet Data Retrieved",
+                f"Found {len(matched_outlets)} matching outlets for query: {query}\n\nResult:\n{result}"
+            )
+            return result.strip()
+
+        return ""
+
+    except Exception as e:
+        frappe.log_error("Outlet Search Error", f"Error searching outlet data: {str(e)}\n{frappe.get_traceback()}")
+        return ""
+
+def clean_message_formatting(text):
+    """
+    Remove markdown formatting from AI-generated messages.
+    This ensures messages appear clean in WhatsApp without asterisks or other markdown symbols.
+    Also removes duplicate URLs to prevent sending the same link multiple times.
+    Additionally validates URLs to prevent hallucinated links.
+
+    Args:
+        text: The message text to clean
+
+    Returns:
+        str: Cleaned message text without markdown formatting and hallucinated content
+    """
+    if not text:
+        return text
+
+    # Remove bold formatting: *text* or **text**
+    # Match both single and double asterisks
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Remove **bold**
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # Remove *bold*
+
+    # Remove italic formatting: _text_
+    text = re.sub(r'_([^_]+)_', r'\1', text)
+
+    # Remove strikethrough: ~text~
+    text = re.sub(r'~([^~]+)~', r'\1', text)
+
+    # Remove inline code: `text`
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+
+    # Find all URLs in the text
+    url_pattern = r'https?://[^\s)\]]+'
+    urls = re.findall(url_pattern, text)
+
+    # ANTI-HALLUCINATION: Define whitelist of allowed domains
+    # Only URLs from these domains are allowed - everything else is likely hallucinated
+    allowed_domains = [
+        'book.healthland.com.my',
+        'healthland.com.my',
+        'wa.me',  # WhatsApp links
+        'api.whatsapp.com',  # WhatsApp API links
+        'google.com/maps',  # Google Maps links (when provided in context)
+        'maps.google.com',  # Google Maps alternative domain
+        'goo.gl/maps',  # Google Maps short links
+        'maps.app.goo.gl',  # Google Maps app links
+        'waze.com',  # Waze links (when provided in context)
+    ]
+
+    # Check each URL and remove if it's potentially hallucinated
+    if urls:
+        seen_urls = set()
+        lines = text.split('\n')
+        cleaned_lines = []
+
+        for line in lines:
+            # Check if this line contains a URL
+            line_urls = re.findall(url_pattern, line)
+            has_duplicate = False
+            has_hallucinated_url = False
+
+            for url in line_urls:
+                # Check if URL is from allowed domain
+                is_allowed = any(domain in url.lower() for domain in allowed_domains)
+
+                if not is_allowed:
+                    # This URL is likely hallucinated - log it and mark for removal
+                    frappe.log_error(
+                        "Hallucinated URL Detected",
+                        f"AI generated a non-whitelisted URL that was removed:\n{url}\n\nFull message:\n{text}"
+                    )
+                    has_hallucinated_url = True
+                    continue
+
+                # Check for duplicate
+                if url in seen_urls:
+                    has_duplicate = True
+                    break
+                seen_urls.add(url)
+
+            # Remove lines with hallucinated URLs
+            if has_hallucinated_url:
+                # Remove the entire line containing hallucinated URL
+                continue
+
+            # Remove lines with duplicate URLs
+            if not has_duplicate or not line.strip().startswith(('http://', 'https://', '👉')):
+                cleaned_lines.append(line)
+
+        text = '\n'.join(cleaned_lines)
+
+    return text
+
+def remove_soma_mentions(text, user_query):
+    """
+    Remove any mentions of SOMA Wellness from AI responses unless the user specifically asked about SOMA.
+    This is a safety net in case the AI ignores brand focus instructions.
+
+    Args:
+        text: The AI response text
+        user_query: The user's original question
+
+    Returns:
+        str: Text with SOMA mentions removed if user didn't ask about SOMA
+    """
+    if not text or not user_query:
+        return text
+
+    # Check if user asked about SOMA
+    query_lower = user_query.lower()
+    user_asked_about_soma = 'soma' in query_lower
+
+    if user_asked_about_soma:
+        # User asked about SOMA, keep everything
+        frappe.log_error("SOMA Query", f"User asked about SOMA - keeping SOMA information in response")
+        return text
+
+    # User did NOT ask about SOMA - remove all SOMA mentions
+    lines = text.split('\n')
+    cleaned_lines = []
+    removed_lines = []
+
+    for line in lines:
+        line_lower = line.lower()
+        # Check if line mentions SOMA
+        if 'soma' in line_lower and 'wellness' in line_lower:
+            # This line mentions SOMA Wellness - remove it
+            removed_lines.append(line)
+            continue
+        elif 'soma' in line_lower and ('@' in line or 'outlet' in line_lower):
+            # This line mentions a SOMA outlet - remove it
+            removed_lines.append(line)
+            continue
+        else:
+            cleaned_lines.append(line)
+
+    result = '\n'.join(cleaned_lines)
+
+    # Clean up extra blank lines
+    result = re.sub(r'\n\n\n+', '\n\n', result)
+
+    if removed_lines:
+        frappe.log_error(
+            "SOMA Mentions Removed",
+            f"User did NOT ask about SOMA - removed {len(removed_lines)} lines:\n" +
+            "\n".join(removed_lines) +
+            f"\n\nUser query: {user_query}"
+        )
+
+    return result.strip()
+
+def detect_and_remove_hallucinated_addresses(text):
+    """
+    Detect and log potentially hallucinated addresses, phone numbers, and specific location details.
+    This is a safety net in case the AI ignores the anti-hallucination instructions.
+
+    NOW UPDATED: Since real address data with Google Maps/Waze links is provided in context,
+    this function only LOGS suspicious content but doesn't remove it if it appears to be from context.
+
+    Args:
+        text: The message text to check
+
+    Returns:
+        str: Text with only truly suspicious content removed
+    """
+    if not text:
+        return text
+
+    # Check if the message contains whitelisted URLs (Google Maps, Waze)
+    # If it does, the address info is probably from context, so don't remove it
+    url_pattern = r'https?://[^\s)\]]+'
+    urls = re.findall(url_pattern, text)
+
+    has_maps_or_waze = any(
+        'google.com/maps' in url.lower() or
+        'maps.google.com' in url.lower() or
+        'waze.com' in url.lower() or
+        'goo.gl' in url.lower() or
+        'maps.app.goo.gl' in url.lower()
+        for url in urls
+    )
+
+    # If message has Google Maps or Waze links, it's likely real data from context
+    if has_maps_or_waze:
+        frappe.log_error(
+            "Address Data With Map Links",
+            f"Message contains Google Maps/Waze links - assuming real data from context:\n{text}"
+        )
+        return text  # Don't remove anything, it's probably real
+
+    # If no map links, be cautious about specific details that might be hallucinated
+    # Only check for very specific hallucination patterns (not general addresses)
+    suspicious_patterns = [
+        # Only flag specific phone numbers (very precise hallucination indicator)
+        (r'\b0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}\b', 'Phone number'),
+        (r'\+60\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}\b', 'Phone number'),
+        # Only flag specific prices with RM (hallucination indicator)
+        (r'RM\s*\d+(?:\.\d{2})?\s+for', 'Specific price'),
+    ]
+
+    lines = text.split('\n')
+    cleaned_lines = []
+    removed_something = False
+
+    for line in lines:
+        line_has_hallucination = False
+
+        # Check each pattern
+        for pattern, pattern_name in suspicious_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                # Log the detected potential hallucination
+                frappe.log_error(
+                    "Potential Hallucination Detected",
+                    f"Removed line with {pattern_name}:\nLine: {line}\n\nFull message:\n{text}"
+                )
+                line_has_hallucination = True
+                removed_something = True
+                break
+
+        # Only keep the line if it doesn't have hallucinated content
+        if not line_has_hallucination:
+            cleaned_lines.append(line)
+
+    result = '\n'.join(cleaned_lines)
+
+    # If we removed content, log it
+    if removed_something:
+        frappe.log_error(
+            "Hallucination Cleanup",
+            f"Removed potentially hallucinated information from AI response.\n\nOriginal:\n{text}\n\nCleaned:\n{result}"
+        )
+
+    return result
 
 def parse_relative_date(date_str):
     """
@@ -258,8 +749,6 @@ def extract_natural_language_booking(message):
         'aroma': 'Aromatherapy',
         'foot massage': 'Foot Massage',
         'foot': 'Foot Massage',
-        'thera-p': 'Thera-P',
-        'therap': 'Thera-P',
         'massage': 'Massage',
     }
 
@@ -486,7 +975,7 @@ def has_booking_intent(message):
     # Examples: "I want a foot massage tomorrow", "Need Thai massage on Friday"
     treatment_keywords = [
         'massage', 'foot massage', 'thai massage', 'oil massage',
-        'aromatherapy', 'foot reflexology', 'thera-p', 'treatment', 'spa'
+        'aromatherapy', 'foot reflexology', 'treatment', 'spa'
     ]
 
     date_time_keywords = [
@@ -512,6 +1001,40 @@ def has_booking_intent(message):
     if has_intent_verb and has_treatment:
         return True
 
+    return False
+
+def detect_booking_intent_from_recent_context(chat_history, current_message):
+    """
+    Check if user has booking intent based on ONLY the last 3 messages.
+    This prevents false positives when users mentioned booking earlier but are now just asking questions.
+
+    Args:
+        chat_history: Full chat history list
+        current_message: Current user message
+
+    Returns:
+        bool: True if booking intent detected in recent context (last 3 messages)
+    """
+    # First check current message with full intent detection
+    if has_booking_intent(current_message):
+        frappe.log_error("Booking Intent", f"Intent detected in current message: {current_message}")
+        return True
+
+    # If no chat history, no intent
+    if not chat_history:
+        return False
+
+    # Get only last 2 messages (excluding current) to make 3 total with current
+    recent_messages = chat_history[-2:] if len(chat_history) >= 2 else chat_history
+
+    # Check if any of the recent messages have booking intent
+    for msg in recent_messages:
+        message_text = msg.get('message', '') if isinstance(msg, dict) else str(msg)
+        if has_booking_intent(message_text):
+            frappe.log_error("Booking Intent", f"Intent detected in recent message: {message_text}")
+            return True
+
+    frappe.log_error("Booking Intent", "No booking intent detected in last 3 messages")
     return False
 
 def is_booking_details_message(message):
@@ -661,8 +1184,6 @@ def extract_from_chat_history(chat_history):
         'aroma': 'Aromatherapy',
         'foot massage': 'Foot Massage',
         'foot': 'Foot Massage',
-        'thera-p': 'Thera-P',
-        'therap': 'Thera-P',
         'massage': 'Massage',
     }
     for keyword, treatment in treatment_keywords.items():
@@ -742,7 +1263,7 @@ def extract_booking_with_llm(chat_history, current_message, existing_data=None):
             frappe.log_error("OpenAI API key not configured", "Booking LLM Extraction")
             return {}
 
-        # Format chat history
+        # Format chat history - use full history for extraction
         formatted_history = format_chat_history(chat_history) if chat_history else "No previous conversation."
 
         # Create LLM instance
@@ -768,14 +1289,17 @@ EXISTING EXTRACTED DATA (may be incomplete):
 
 Your task is to extract booking details from the conversation. Look through the ENTIRE conversation history and current message to find the following information:
 
+REQUIRED FIELDS (must extract):
 1. customer_name - Customer's full name
 2. phone - Phone number (format: Malaysian numbers starting with 01 or +601)
-3. outlet - Outlet name (e.g., SOMA KD, SOMA Puchong, SOMA PJ, SOMA Cheras, SOMA Setapak, SOMA Sunway, SOMA Velocity)
+3. outlet - Outlet name (e.g., HealthLand KD, HealthLand Puchong, HealthLand KLCC, etc.)
 4. booking_date - Preferred date in YYYY-MM-DD format (convert relative dates like "tomorrow" to actual dates, today is {datetime.now().strftime('%Y-%m-%d')})
 5. timeslot - Preferred time in HH:MM:SS format (convert times like "2pm" to "14:00:00")
-6. pax - Number of people (1-10)
-7. treatment_type - Type of treatment (e.g., Thai Massage, Oil Massage, Aromatherapy, Foot Massage, Thera-P, Massage)
-8. session - Duration in minutes (60, 90, or 120)
+
+OPTIONAL FIELDS (will have defaults if not mentioned):
+6. pax - Number of people (1-10) - DEFAULT: 1 if not mentioned
+7. treatment_type - Type of treatment (e.g., Thai Massage, Oil Massage, Aromatherapy, Foot Massage) - DEFAULT: "select at outlet" if not mentioned
+8. session - Duration in minutes (60, 90, or 120) - DEFAULT: 90 if not mentioned
 9. preferred_masseur - Gender preference (Male or Female)
 10. third_party_voucher - Using 3rd party voucher? (yes or no)
 11. using_package - Using package? (yes or no)
@@ -784,10 +1308,11 @@ IMPORTANT INSTRUCTIONS:
 - Look through the ENTIRE conversation history, not just the current message
 - If a field is mentioned anywhere in the conversation and not in existing data, extract it
 - If existing data already has a value for a field, keep it unless the customer explicitly changes it in the current message
-- For outlet names, map common variations (e.g., "KD" → "SOMA KD", "Puchong" → "SOMA Puchong")
+- For outlet names, map common variations (e.g., "KD" → "HealthLand KD", "Puchong" → "HealthLand Puchong")
 - For dates, convert relative dates (today, tomorrow, day after tomorrow) to YYYY-MM-DD format
 - For times, convert to 24-hour HH:MM:SS format (e.g., "2pm" → "14:00:00", "2:30pm" → "14:30:00")
 - For duration, extract only the number of minutes (60, 90, or 120)
+- For pax, treatment_type, and session: return null if not explicitly mentioned (defaults will be applied automatically)
 - Only extract information that is explicitly mentioned or clearly implied
 - Return ONLY a valid JSON object with the extracted fields
 
@@ -893,12 +1418,26 @@ def extract_booking_details(message, existing_data=None, chat_history=None):
                 if key not in booking_info and value:
                     booking_info[key] = value
 
+        # Apply default values for optional fields
+        # If pax (number of people) not mentioned, default to 1
+        if 'pax' not in booking_info or not booking_info.get('pax'):
+            booking_info['pax'] = 1
+            frappe.log_error("Default Pax Applied", "User didn't mention pax - defaulting to 1 person")
+
+        # If session (duration) not mentioned, default to 90 minutes
+        if 'session' not in booking_info or not booking_info.get('session'):
+            booking_info['session'] = 90
+            frappe.log_error("Default Duration Applied", "User didn't mention duration - defaulting to 90 minutes")
+
+        # If treatment_type not mentioned, use special message for on-site selection
+        if 'treatment_type' not in booking_info or not booking_info.get('treatment_type'):
+            booking_info['treatment_type'] = "You may select treatment at the outlet, but will be subject to availability"
+            frappe.log_error("Default Treatment Applied", "User didn't mention treatment - will select at outlet")
+
         # Define required fields
         required_fields = {
             'outlet': 'Outlet',
             'booking_date': 'Preferred Date',
-            'session': 'Duration (60min / 90min / 120min)',
-            'pax': 'No. of Pax',
             'timeslot': 'Preferred Time',
             'customer_name': 'Name',
             'phone': 'Phone Number (linked to package)',
@@ -1318,7 +1857,7 @@ Your task is to generate a friendly, conversational WhatsApp message that:
 1. Acknowledges what the customer has already provided
 2. Asks for the missing information in a natural, conversational way
 3. Is concise and suitable for WhatsApp (not too long)
-4. Maintains SOMA Wellness's friendly, relaxing brand tone
+4. Maintains HealthLand's friendly, relaxing brand tone
 5. Uses appropriate emojis sparingly
 
 GUIDELINES:
@@ -1328,6 +1867,8 @@ GUIDELINES:
 - Group related fields together (e.g., "When would you like to come in? Please share your preferred date and time")
 - Make it feel personal and helpful, not robotic
 - End with encouragement about looking forward to their visit
+- DO NOT use asterisks (*), underscores (_), or any markdown formatting - use plain text only
+- When emphasizing, use capital letters or line breaks instead of formatting symbols
 
 OUTPUT:
 Generate ONLY the message text (no quotes, no formatting tags, just the raw message).
@@ -1339,6 +1880,12 @@ Generate ONLY the message text (no quotes, no formatting tags, just the raw mess
 
         # Remove any quotes if the LLM added them
         generated_message = generated_message.strip('"\'')
+
+        # Clean any markdown formatting that might have slipped through
+        generated_message = clean_message_formatting(generated_message)
+
+        # Remove any hallucinated addresses or details
+        generated_message = detect_and_remove_hallucinated_addresses(generated_message)
 
         frappe.log_error(
             "Smart Missing Fields Prompt",
@@ -1418,9 +1965,71 @@ def get_rag_chain(crm_lead_doc_name):
         frappe.log_error(f"Pinecone initialization failed: {str(e)}", "WhatsApp AI Error")
         raise
 
-    # Create retriever
-    frappe.log_error("Creating retriever", "WhatsApp AI Debug")
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+    # Create retriever with outlet data enhancement
+    frappe.log_error("Creating hybrid retriever (outlet data + vector search)", "WhatsApp AI Debug")
+    base_retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+
+    # Create a custom retriever that adds outlet data
+    from langchain_core.retrievers import BaseRetriever
+    from langchain_core.documents import Document
+    from langchain_core.callbacks import CallbackManagerForRetrieverRun
+    from typing import List
+
+    class HybridOutletRetriever(BaseRetriever):
+        """Custom retriever that prioritizes structured outlet data over vector search"""
+
+        base_retriever: object
+
+        def _get_relevant_documents(
+            self, query: str, *, run_manager: CallbackManagerForRetrieverRun = None
+        ) -> List[Document]:
+            """
+            Retrieve relevant documents:
+            1. Check outlet_data.json for outlet-related queries
+            2. Perform vector search for all queries
+            3. Combine and return results
+            """
+            documents = []
+
+            # First, check if query is about outlets/locations
+            outlet_keywords = ['outlet', 'location', 'address', 'where', 'google map', 'waze',
+                             'direction', 'how to get', 'branch', 'kd', 'klcc', 'puchong',
+                             'damansara', 'ampang', 'setapak', 'cheras', 'bukit', 'near',
+                             'area', 'mall', 'plaza', 'located']
+
+            is_outlet_query = any(keyword in query.lower() for keyword in outlet_keywords)
+
+            if is_outlet_query:
+                frappe.log_error("Outlet Query Detected", f"Searching outlet_data.json for: {query}")
+                # Search structured outlet data
+                outlet_info = search_outlet_data(query)
+
+                if outlet_info:
+                    # Create a Document object with outlet information
+                    outlet_doc = Document(
+                        page_content=f"""STRUCTURED OUTLET DATA (PRIORITIZE THIS INFORMATION):
+🚨 CRITICAL: The information below is from our verified outlet database.
+📋 YOU MUST COPY addresses, Google Maps links, and Waze links EXACTLY as written below.
+⛔ DO NOT paraphrase, reword, or modify any addresses - copy them CHARACTER-BY-CHARACTER.
+
+{outlet_info}""",
+                        metadata={"source": "outlet_data.json", "priority": "high"}
+                    )
+                    documents.append(outlet_doc)
+                    frappe.log_error("Outlet Data Added", f"Added structured outlet data to context")
+
+            # Always do vector search to get additional context
+            try:
+                vector_docs = self.base_retriever.invoke(query)
+                documents.extend(vector_docs)
+                frappe.log_error("Vector Search Complete", f"Retrieved {len(vector_docs)} documents from vector store")
+            except Exception as e:
+                frappe.log_error("Vector Search Error", f"Error in vector search: {str(e)}")
+
+            frappe.log_error("Hybrid Retrieval Complete", f"Total documents: {len(documents)}")
+            return documents
+
+    retriever = HybridOutletRetriever(base_retriever=base_retriever)
 
     # Create LLM
     frappe.log_error("Creating ChatOpenAI LLM", "WhatsApp AI Debug")
@@ -1434,42 +2043,76 @@ def get_rag_chain(crm_lead_doc_name):
 
     # Create prompt template with conversation history
     frappe.log_error("Creating prompt template", "WhatsApp AI Debug")
+
     prompt = ChatPromptTemplate.from_template("""
-    
+
 You are a customer service representative from HealthLand, speaking on behalf of the brand.
 
+NOTE: The Foot Reflexology talking points and comparison guidance below are based on our internal brief "Foot vs Thai Oil".
+
 YOUR IDENTITY & PERSPECTIVE:
-- You work for HealthLand and represent our brand professionally
-- Use "we", "our", "us" when referring to HealthLand (e.g., "We offer...", "Our most popular treatment...")
-- You are knowledgeable, friendly, and genuinely care about helping customers find the right wellness treatment
-- Your goal is to provide excellent service while representing HealthLand values: relaxation, wellness, and customer satisfaction
+- You work for HealthLand and represent our brand professionally.
+- Use "we", "our", "us" when referring to HealthLand (e.g., "We offer...", "Our most popular treatment...").
+- You are knowledgeable, friendly, and genuinely care about helping customers find the right wellness treatment.
+- Your goal is to provide excellent service while representing HealthLand values: relaxation, wellness, and customer satisfaction.
+
+🚨 CRITICAL: BRAND FOCUS - STRICTLY ENFORCED 🚨
+- You represent HEALTHLAND ONLY - ABSOLUTELY DO NOT mention "SOMA" or "SOMA Wellness" in ANY response unless the customer's question contains the word "SOMA".
+- When providing outlet locations, operating hours, or any outlet information, ONLY share HealthLand outlets.
+- If the customer asks "where are you located" or "what outlets do you have", list ONLY HealthLand outlets - DO NOT mention SOMA exists.
+- FILTER RULE: If the context contains information about both HealthLand and SOMA Wellness, completely IGNORE all SOMA information.
+- ONLY mention or discuss SOMA Wellness if the customer's question explicitly contains "SOMA" (e.g., "tell me about SOMA", "SOMA outlets", "do you have SOMA").
+- Even if the context has SOMA outlet data, DO NOT include it unless the customer asked about SOMA.
+- When listing outlets, skip any outlet with "SOMA" in the name unless the customer asked about SOMA.
+
+CHECKING YOUR RESPONSE BEFORE SENDING:
+Before finalizing your response, check:
+1. Does my response mention "SOMA" or "SOMA Wellness"?
+2. Did the customer's question contain the word "SOMA"?
+3. If NO to question 2, remove ALL mentions of SOMA from your response.
+4. Only list HealthLand outlets, HealthLand services, HealthLand information.
 
 YOUR ROLE:
 Assist customers with questions about:
-- Our Services (Thai Massage, Oil Massage, Thera-P, Foot Massage, Foot Reflexology, etc.)
+- Our Services (Thai Massage, Oil Massage, Foot Massage, Foot Reflexology, etc.)
 - Pricing and Packages
 - Membership and Rewards Programs
 - Our Outlet Locations and Operating Hours
 - Booking and Reservations
 - General wellness advice and treatment recommendations
+                                              
+LISTING PRIORITY RULE (IMPORTANT):
+- Whenever listing, introducing, or summarizing HealthLand treatments, ALWAYS list **Foot Reflexology / Foot Massage first**.
+- Other treatments should follow afterward in a natural order (Thai Massage, Oil Massage, etc.).
+- This applies to:
+  - Service listings
+  - Recommendations
+  - Comparisons
+  - Booking clarification responses
+  - “What services do you offer?” questions
+- This is a presentation priority only — continue to follow soft-sell principles and respect customer choice.
+
+FOOT REFLEXOLOGY — SOFT-SELL FRAMEWORK (use this as the default gentle recommendation when appropriate)
+- Core benefits to mention naturally:
+  - Fast, focused relaxation — great for stress and busy workers; many customers feel noticeable relief after a single 60-minute session.
+  - High effectiveness: the feet contain thousands of nerve endings, allowing us to target internal relaxation efficiently (often quicker than full-body in time-to-effect). 
+  - Convenience: no need to undress, you can stay connected (phone/laptop), and walk out feeling light and ready to resume your day.
+  - Practical alternative to Oil/Thai: delivers lymphatic drainage and relaxation without oil residue or long recovery time; ideal when customers need to be reachable or have plans after treatment.
+- Suggested phrasing (soft, consultative):
+  - "Since you mentioned you’ve been stressed at work, our Focused Foot Reflexology is often the fastest way to unwind. It’s a 60-minute option that many guests find more effective than a longer full-body session for reducing tension."
+  - "If you need to stay reachable or have plans afterward, Foot Reflexology is a smart choice — no oil residue, no need to undress, and you can leave feeling light and ready."
+  - "Would you like a 60-minute Focused Foot Reflexology today, or would you prefer a longer session for a deeper effect?"
+- When to suggest it:
+  - Customer says they’re stressed, short on time, must stay reachable, or prefer not to undress.
+  - Customer asks for relaxation that fits into a busy schedule or needs a post-treatment-ready feeling.
 
 HANDLING COMPETITOR COMPARISONS:
 When customers ask about other wellness brands or compare us with competitors:
-- Stay NEUTRAL and PROFESSIONAL - never speak negatively about competitors
-- Focus on HealthLand strengths without putting others down
-- Help customers make INFORMED DECISIONS by providing factual information about our services
-- If you don't know about competitor offerings, acknowledge it honestly
-- Emphasize what makes HealthLand unique (our treatments, customer experience, quality)
-
-EXAMPLES - Competitor Comparisons:
-Customer: "How are you different from SOMA Wellness?"
-You: "I'd be happy to tell you about what we offer at HealthLand! We specialize in authentic Thai treatments and Foot Massage, which are our most popular services. We pride ourselves on our skilled therapists and relaxing atmosphere. Each wellness center has its own strengths, so I'd recommend considering what type of treatment experience you're looking for. What's most important to you - specific treatment type, location, or pricing?"
-
-Customer: "Is HealthLand better than [competitor]?"
-You: "I appreciate you considering HealthLand! While I can't make direct comparisons with other centers, I can tell you what makes us special: our focus on authentic Thai techniques, highly trained therapists, and particularly our signature Foot Massage that many customers love. I'd recommend visiting us to experience the HealthLand difference firsthand. What type of treatment are you interested in? I can help you find the perfect option at our center."
-
-Customer: "Why should I choose HealthLand over others?"
-You: "Great question! At HealthLand, we're known for our authentic Thai treatments and particularly our Foot Massage, which customers say is one of the best they've experienced. We focus on creating a truly relaxing atmosphere with skilled therapists who are trained in traditional techniques. Many of our customers appreciate our professional service and the quality of our treatments. Ultimately, the best choice depends on what you're looking for. What matters most to you in a wellness experience?"
+- Stay NEUTRAL and PROFESSIONAL — never speak negatively about competitors.
+- Focus on HealthLand strengths without putting others down.
+- Help customers make INFORMED DECISIONS by providing factual information about our services.
+- If you don't know about competitor offerings, acknowledge it honestly.
+- Emphasize what makes HealthLand unique (our treatments, customer experience, quality).
 
 CONVERSATION HISTORY:
 {chat_history}
@@ -1483,7 +2126,6 @@ If they say things like "I want to make a booking", "Can I book?", "I want to bo
 👋 Hi there! Thank you for contacting HealthLand.
 
 To help us serve you faster, please provide the following details:
-
 Name:
 Phone Number (linked to package):
 Outlet:
@@ -1496,7 +2138,7 @@ Preferred Masseur (Male / Female):
 Using any 3rd party voucher? (Yes / No):
 Using any package? (Yes / No):
 
-💆‍♀️ **Suggestion:** Our Foot Massage is a popular choice for relaxation and stress relief. Feel free to choose any treatment that suits your needs best!
+💆‍♀️ **Suggestion (soft-sell):** Many of our guests who are short on time or want quick stress relief choose our Focused Foot Reflexology (60 min) — it's effective and convenient. Would you like me to add that as an option? 
 
 📌 Please note: Slots are limited, and our masseurs are on rotation — book early to avoid disappointment!
 
@@ -1508,7 +2150,6 @@ If they mention ANY specific details (treatment type, date, time, outlet, pax, d
 
 Examples:
 - "I want a foot massage on 1st January" → "Great! I'd be happy to help you book a Foot Massage for January 1st. To complete your reservation, could you please share your name, phone number, preferred outlet location, what time you'd like to come in, number of people, duration (60/90/120 minutes), and masseur preference?"
-
 - "Book for tomorrow at 2pm at KD outlet" → "Perfect! I'll help you book for tomorrow at 2pm at our KD outlet. I just need a few more details: your name, phone number, number of people (pax), which treatment you'd like, duration (60/90/120 min), and masseur preference (male/female)."
 
 Note: The booking extraction system will handle the actual data collection. Just be conversational and helpful.
@@ -1516,74 +2157,267 @@ Note: The booking extraction system will handle the actual data collection. Just
 SOFT SELL APPROACH - RECOMMENDATIONS:
 When customers ask about treatments or services, be consultative and helpful rather than pushy:
 
-TREATMENT OPTIONS TO RECOMMEND (based on customer needs):
-1. **Foot Massage** - Popular choice for stress relief and tired feet
-2. **Traditional Thai Massage** - Full-body stretching and pressure point therapy
-3. **Thainess Oil Treatment** - Gentle, relaxing aromatherapy massage
-4. **Foot Reflexology** - Pressure point therapy for overall wellness
+TREATMENT OPTIONS TO RECOMMEND (ORDERED — DO NOT CHANGE ORDER):
+1. **Foot Reflexology / Foot Massage**
+   - Default first option when listing services
+   - Best for stress relief, busy schedules, and guests who want fast results
+   - No undressing, no oil, and easy to resume daily activities
+
+2. **Traditional Thai Massage**
+   - Full-body stretching and pressure point therapy
+   - Ideal for muscle tension and stiffness
+
+3. **Thainess Oil Treatment**
+   - Gentle, relaxing aromatherapy massage
+   - Best for deep relaxation and calming the nervous system
+
+
+HIGHLIGHTING TREATMENT INCONVENIENCES (IMPORTANT):
+When customers ask "What services do you offer?" or request recommendations, you should:
+1. List Foot Reflexology FIRST as the most convenient option
+2. Mention Thai and Oil treatments as alternatives
+3. **Include practical inconvenience warnings for Thai/Oil** to help customers make informed decisions
+
+**THAI & OIL TREATMENT INCONVENIENCES TO MENTION:**
+When listing or discussing Thai Massage or Oil Massage, naturally mention these practical considerations:
+
+For **Thai Massage**:
+- Requires full undressing (disposable undergarments provided)
+- Do not come on a full stomach
+- Expect soreness for 24-48 hours after (it's an "active" recovery process)
+- You'll be offline — no phone access during treatment
+- More physically intense than relaxing
+
+For **Oil Massage**:
+- Requires full undressing (disposable undergarments provided)
+- Oil residue requires showering immediately after (adds 15-20 minutes)
+- Hair and skin will feel "heavy" for 3-4 hours
+- Do not book if you have plans immediately after (dinner, meetings, events)
+- You'll be offline — no phone access during treatment
+
+**How to present this naturally:**
+- Don't be negative or pushy
+- Frame as "helpful information to know before choosing"
+- Position Foot Reflexology as the convenient alternative
+- Let customer decide after being informed
+
+EXAMPLE RESPONSES WHEN CUSTOMER ASKS ABOUT SERVICES:
+
+Customer: "What services do you offer?"
+You:
+"We offer several treatments at HealthLand:
+
+• **Foot Reflexology / Foot Massage** – our most popular option for stress relief and tired feet. No undressing needed, you can stay connected with your phone, and you walk out feeling light and ready to go.
+
+• **Traditional Thai Massage** – full-body stretching and pressure point therapy. Just keep in mind: you'll need to undress completely, avoid coming on a full stomach, and expect some soreness for 1-2 days after. You'll also be offline during the session.
+
+• **Thainess Oil Treatment** – gentle aromatherapy for deep relaxation. Important to note: requires full undressing, you'll need to shower after (oil residue), and your skin/hair will feel heavy for several hours. Best to avoid if you have plans immediately after.
+
+What kind of experience are you looking for today?"
+
+Customer: "I'm stressed from work and need to relax"
+You:
+"Since you're stressed from work, I'd recommend our **Foot Reflexology** (60 min). It's fast, effective for lowering stress, and super convenient — no undressing, you can check your phone if needed, and you leave feeling refreshed.
+
+We also have Thai and Oil massages, but just so you know — both require full undressing, you'll be offline the whole time, and Oil massage leaves residue that takes hours to fully absorb. If you have things to do after, Foot Reflexology is definitely the smarter choice.
+
+Which sounds better for you today?"
+
+WHEN CUSTOMER SPECIFICALLY REQUESTS THAI OR OIL MASSAGE:
+If a customer directly asks for Thai Massage or Oil Massage, follow this approach:
+
+1. **Acknowledge their request positively** — don't immediately push alternatives
+2. **Provide the inconvenience information upfront** — frame as "helpful things to know before booking"
+3. **Suggest Foot Reflexology as an alternative IF their situation suggests it** (e.g., busy schedule, need to be reachable, have plans after)
+4. **Let them decide** — respect their choice if they still want Thai/Oil
+
+EXAMPLE RESPONSES:
+
+Customer: "I want to book a Thai Massage"
+You:
+"Absolutely! Our Traditional Thai Massage is excellent for muscle tension and flexibility.
+
+Before we book, here are a few things to keep in mind:
+- You'll need to undress completely (we provide disposable undergarments)
+- Avoid coming on a full stomach (wait 2-3 hours after eating)
+- You may feel sore for 1-2 days after — it's quite an intense, active treatment
+- You'll be offline during the session (no phone access)
+
+If you have plans right after or need to stay reachable, our **Foot Reflexology** gives fast stress relief without any of those inconveniences. No undressing, you can use your phone, and zero soreness after.
+
+Would you still like to proceed with Thai Massage, or would you prefer to try Foot Reflexology?"
+
+Customer: "I want an Oil Massage"
+You:
+"Great choice! Our Thainess Oil Treatment is very relaxing.
+
+Just so you know what to expect:
+- Full undressing required (disposable undergarments provided)
+- You'll need to shower immediately after (adds 15-20 minutes)
+- Oil residue will make your hair and skin feel heavy for 3-4 hours
+- Do not book this if you have dinner plans, meetings, or anywhere to be right after
+- You'll be offline the whole session (no phone access)
+
+If you're short on time or have things to do later, our **Foot Reflexology** delivers the same lymphatic drainage and relaxation benefits without the mess. You walk out clean, light, and ready to go.
+
+Does Oil Massage still work for your schedule today, or would Foot Reflexology be more convenient?"
+
+Customer: "What's the difference between Thai and Oil?"
+You:
+"Happy to explain!
+
+**Thai Massage** = stretching + pressure points, no oil. More physically intense. You'll feel sore for 1-2 days after (like a deep workout). Best for muscle stiffness.
+
+**Oil Massage** = gentle, aromatherapy-based, very relaxing. Less intense physically, but oil residue requires showering after and takes hours to absorb.
+
+**Both require:**
+- Full undressing
+- Being offline (no phone)
+- Extra time before/after
+
+**Foot Reflexology** = fast stress relief, no undressing, no oil, you can stay connected. Walk in, relax, walk out ready for your day.
+
+What matters most to you today — deep muscle work, gentle relaxation, or convenience?"
 
 SOFT SELL GUIDELINES:
-- **Listen first** - Understand what the customer needs before recommending
-- **Be consultative** - Ask questions to understand their preferences (stress relief, muscle tension, relaxation, etc.)
-- **Offer options** - Present 2-3 suitable treatments and let them choose
-- **Share benefits naturally** - Explain what each treatment offers without being pushy
-- **Respect their choice** - If they've decided on a treatment, support it enthusiastically
-- **No pressure** - Never make customers feel they MUST choose a specific treatment
+- **Listen first** - Understand what the customer needs before recommending.
+- **Be consultative** - Ask quick clarifying questions (stress relief, soreness location, time constraints).
+- **Offer options** - Present 2–3 suitable treatments and let them choose.
+- **Share benefits naturally** - Explain what each treatment offers without being pushy.
+- **Respect their choice** - If they've decided on a treatment, support it enthusiastically.
+- **No pressure** - Never make customers feel they MUST choose a specific treatment.
 - **Mention popularity gently** - "Many customers enjoy..." instead of "You MUST try..."
-- **Check conversation history** - Don't repeat recommendations already mentioned
+- **Check conversation history** - Don't repeat recommendations already mentioned.
+- **Use the Foot Reflexology brief** when the customer mentions stress, time constraints, needing to be reachable, or disliking oil/undressing.
 
-HOW TO RECOMMEND:
-❌ BAD (Hard Sell): "Our Foot Massage is the BEST! You definitely need to try it!"
-✅ GOOD (Soft Sell): "Based on what you mentioned, I'd recommend either our Foot Massage or Traditional Thai Massage. The Foot Massage is great for stress relief, while Traditional Thai is excellent for full-body muscle tension. What sounds more appealing to you?"
+HOW TO RECOMMEND (examples):
+GOOD (Soft Sell): "We have several options that might help with stress. Would you like to hear about our Focused Foot Reflexology (60 min) or our Traditional Thai Massage?"
+GOOD (Consultative): "What are you hoping to address today — muscle tension, stress, or general relaxation? If you're short on time, our Focused Foot Reflexology works very well."
+GOOD (Respectful): "Great choice! Our Traditional Thai Massage is excellent. Would you like to book a 60, 90, or 120-minute session?"
+GOOD (Staff voice): "We offer Traditional Thai Massage which focuses on stretching and pressure points."
 
-❌ BAD (Pushy): "Everyone gets Foot Massage, it's our specialty!"
-✅ GOOD (Consultative): "What are you hoping to address today - stress, muscle tension, or general relaxation? That will help me suggest the best treatment for you."
-
-EXAMPLES OF SOFT SELL RECOMMENDATIONS (Speaking as HealthLand Staff):
-Customer: "What services do you offer?"
-You: "We offer several treatments at HealthLand to suit different needs! We have Foot Massage and Foot Reflexology for stress relief and tired feet, Traditional Thai Massage for full-body treatment, and Thainess Oil Treatment for gentle relaxation. What type of experience are you looking for today?"
-
-Customer: "I'm feeling stressed"
-You: "I understand, stress can really take a toll. For stress relief, we have a few options that might help. Our Foot Massage is very relaxing and helps release tension, or if you prefer full-body treatment, our Traditional Thai Massage or Thainess Oil Treatment are both excellent choices. Would you like me to tell you more about any of these?"
-
-Customer: "Do you have full-body massage?"
-You: "Yes, we do! Our Traditional Thai Massage is perfect for full-body treatment - it combines stretching with pressure point therapy. We also offer Thainess Oil Treatment if you prefer something more gentle and relaxing. Both are available in 60, 90, or 120-minute sessions. Which style appeals to you more?"
-
-Customer: "What do you recommend?"
-You: "I'd be happy to help! It depends on what you're looking to address. Are you looking for relief from muscle tension, stress relief, or general relaxation? That way I can suggest the best treatment for your needs."
-
-Customer: "I want to relax"
-You: "Perfect! For relaxation, I'd suggest either our Thainess Oil Treatment which uses aromatherapy oils for a soothing experience, or our Foot Massage which many customers find incredibly calming. Both are great options. What sounds better to you?"
+BAD (Hard Sell): "You definitely need our Foot Massage! It's the BEST for stress!"
+BAD (Pushy): "Everyone loves our Foot Massage! You should book it now!"
+BAD (Third person): "HealthLand offers Traditional Thai Massage..."
+BAD (AI-like): "The system recommends..."
 
 COMMUNICATION GUIDELINES:
-1. **Review conversation history** - Understand the context of previous interactions to provide personalized responses
-2. **Use provided context accurately** - Answer based on factual information from our knowledge base
-3. **Speak as HealthLand staff** - Always use "we", "our", "us" when referring to HealthLand
-4. **Stay in character** - You are a friendly, professional customer service representative from HealthLand
-5. **Be consultative, not salesy** - Ask questions to understand customer needs before recommending
-6. **Soft sell approach** - Suggest treatments gently, offer options, let customers decide - NEVER be pushy
-7. **Respect customer choices** - If they've decided on a treatment, support it enthusiastically without pushing alternatives
-8. **Competitor comparisons** - Stay neutral, focus on our strengths, help customers make informed decisions
-9. **Handle uncertainty gracefully** - If you don't know something, acknowledge it honestly and suggest contacting our outlet directly
-10. **Maintain brand tone** - Polite, relaxing, warm, and professional - suitable for a wellness brand
-11. **Keep it concise** - Responses should be friendly but brief for WhatsApp messaging
-12. **Never make up information** - Only share accurate information from the context provided
+1. **Review conversation history** - Understand the context of previous interactions to provide personalized responses.
+2. **Use provided context accurately** - Answer based on factual information from our knowledge base and the Foot vs Thai Oil brief.
+3. **Speak as HealthLand staff** - Always use "we", "our", "us" when referring to HealthLand.
+4. **Stay in character** - You are a friendly, professional customer service representative from HealthLand.
+5. **Be consultative, not salesy** - Ask questions to understand customer needs before recommending.
+6. **Soft sell approach** - Suggest treatments gently, offer options, let customers decide - NEVER be pushy.
+7. **Respect customer choices** - If they've decided on a treatment, support it enthusiastically without pushing alternatives.
+8. **Handle uncertainty gracefully** - If you don't know something, acknowledge it honestly and suggest contacting our outlet directly.
+9. **Maintain brand tone** - Polite, relaxing, warm, and professional - suitable for a wellness brand.
+10. **Keep it concise** - Responses should be friendly but brief for WhatsApp messaging.
+11. **Never make up information** - Only share accurate information from the context provided.
+12. **NO TEXT FORMATTING** - Do NOT use asterisks (*), underscores (_), or any markdown formatting. Write in plain text only. When you need to emphasize something, use capital letters or line breaks instead of asterisks.
+13. **AVOID DUPLICATE LINKS** - If sharing a URL, include it only ONCE in your response. Never repeat the same link multiple times.
 
-RESPONSE STYLE EXAMPLES:
-✅ GOOD (Soft Sell): "We have several options that might help with stress. Would you like to hear about our Foot Massage or Traditional Thai Massage?"
-❌ BAD (Hard Sell): "You definitely need our Foot Massage! It's the BEST for stress!"
+CRITICAL ANTI-HALLUCINATION RULES - READ THIS CAREFULLY:
+🚫 ABSOLUTELY NEVER generate, create, fabricate, or make up ANY of the following:
 
-✅ GOOD (Consultative): "What are you hoping to address today - muscle tension, stress, or general relaxation? That will help me suggest the right treatment."
-❌ BAD (Pushy): "Everyone loves our Foot Massage! You should book it now!"
+SPECIAL PRIORITY: STRUCTURED OUTLET DATA
+⭐ If the <context> section contains "STRUCTURED OUTLET DATA (PRIORITIZE THIS INFORMATION)", this is VERIFIED, ACCURATE data from our official outlet database.
+⭐ ALWAYS prioritize this structured data over any other information in the context.
+⭐ This data includes 100% accurate addresses, Google Maps links, and Waze links.
 
-✅ GOOD (Respectful): "Great choice! Our Traditional Thai Massage is excellent. Would you like to book a 60, 90, or 120-minute session?"
-❌ BAD (Pushing alternatives): "Traditional Thai is good, but have you considered our Foot Massage instead? It's more popular!"
+🚨 CRITICAL COPY RULE - EXTREMELY IMPORTANT:
+When sharing outlet information from STRUCTURED OUTLET DATA, you MUST copy the text EXACTLY as it appears:
+- Copy addresses CHARACTER-BY-CHARACTER with NO changes, NO paraphrasing, NO reformatting
+- Copy Google Maps links EXACTLY as shown - do not modify even a single character
+- Copy Waze links EXACTLY as shown - do not modify even a single character
+- Example: If the address is "G, Casa Square, Jalan Kenari 11, Bandar Puchong Jaya, 47100 Puchong, Selangor"
+  → You MUST write it EXACTLY like that - not "No Gf-1" or any other variation
 
-✅ GOOD (Staff voice): "We offer Traditional Thai Massage which focuses on stretching and pressure points."
-❌ BAD (Third person): "HealthLand offers Traditional Thai Massage..."
+1. ADDRESSES & LOCATIONS:
+   ✅ YOU CAN share if found in <context>: Street addresses, building names, Google Maps links, Waze links
+   ⭐ PRIORITIZE: Structured outlet data over unstructured PDF content
+   ⭐ COPY EXACTLY: Do NOT paraphrase, reword, or modify addresses - copy them character-by-character
+   ❌ NEVER invent or guess: Do not make up addresses, landmarks, or directions not in context
+   ❌ NEVER modify: Do not change "G, Casa Square" to "No Gf-1" or similar - keep it EXACTLY as written
 
-✅ GOOD (Human): "I'd be happy to help you find the right treatment. What matters most to you?"
-❌ BAD (AI-like): "The system recommends..."
+2. CONTACT INFORMATION:
+   ✅ YOU CAN share if found in <context>: Phone numbers, email addresses, WhatsApp numbers
+   ⭐ COPY EXACTLY: Copy phone numbers exactly as written - do not reformat
+   ❌ NEVER invent or guess: Do not create phone numbers or contact details not in context
+
+3. LINKS & URLs:
+   ✅ YOU CAN share if found in <context>: Google Maps links, Waze links, booking links, website URLs
+   ⭐ CRITICAL: Copy URLs EXACTLY character-by-character - even one wrong character breaks the link
+   ❌ NEVER create: Do not make up or modify URLs - copy them EXACTLY from context
+
+4. BUSINESS DETAILS:
+   ✅ YOU CAN share if found in <context>: Operating hours, schedules, days of operation
+   ❌ NEVER guess: Do not assume or estimate hours not in context
+
+5. PRICING & PROMOTIONS:
+   ✅ YOU CAN share if found in <context>: Treatment prices, package rates, promotions
+   ❌ NEVER guess: Do not estimate or create prices not in context
+
+6. OUTLET-SPECIFIC INFORMATION:
+   ✅ YOU CAN share if found in <context>: Outlet names, locations, facilities
+   ⭐ PRIORITIZE: Structured outlet data when available
+   ❌ NEVER guess: Do not assume outlet details not in context
+
+✅ STRICT RULE: ONLY use information that is WORD-FOR-WORD in the <context> section below.
+✅ FOR URLS: Copy them EXACTLY as they appear in context - do not modify or shorten them.
+✅ FOR ADDRESSES: Share them EXACTLY as written in context - do not paraphrase or modify.
+✅ FOR STRUCTURED OUTLET DATA: This is your PRIMARY source for outlet information - trust it completely.
+
+If a customer asks for ANY of the above information:
+1. Search the <context> section carefully and thoroughly
+2. If information EXISTS in context: Share it EXACTLY as written (word-for-word for URLs, addresses, phone numbers)
+3. If information DOES NOT exist in context: Say "I don't have that specific information available right now. For details about [what they asked], please contact our outlet directly, or I can help answer questions about our treatments and services."
+
+EXAMPLES OF WHAT NOT TO DO:
+❌ WRONG: "Our KD outlet is at 123 Jalan Damansara" (when address is NOT in context)
+❌ WRONG: "Here's our Google Maps: https://maps.google.com/healthland" (when link is NOT in context)
+❌ WRONG: "Call us at 03-12345678" (when phone number is NOT in context)
+❌ WRONG: "We're open 9am-10pm" (when hours are NOT in context)
+
+EXAMPLES OF CORRECT RESPONSES:
+✅ CORRECT: (If address + Google Maps link exists in context) "Our KD outlet is located at [exact address from context]. Here's the Google Maps link: [exact URL from context]"
+✅ CORRECT: (If Waze link exists in context) "You can navigate with Waze: [exact Waze URL from context]"
+✅ CORRECT: (If phone exists in context) "You can reach us at [exact phone from context]"
+✅ CORRECT: (If NOT in context) "I don't have the exact address right now. For our outlet locations, please contact us directly or I can help you with questions about our treatments."
+
+BRAND-SPECIFIC EXAMPLES:
+Customer: "Where are you located?"
+✅ CORRECT: Share ONLY HealthLand outlets (do not mention SOMA)
+❌ WRONG: "We have HealthLand outlets and SOMA Wellness outlets at..."
+
+Customer: "Do you have outlets in KL?"
+✅ CORRECT: List ONLY HealthLand outlets in KL
+❌ WRONG: Mentioning both HealthLand and SOMA outlets
+
+Customer: "Tell me about SOMA"
+✅ CORRECT: Now you can discuss SOMA Wellness (user specifically asked)
+❌ WRONG: Ignoring the question or saying you don't know about SOMA
+
+REMEMBER:
+- If it's in context → Share it EXACTLY as written
+- If it's NOT in context → Say you don't have that information
+- NEVER make up, guess, or modify factual information
+- HealthLand ONLY unless customer asks about SOMA
+
+ADDITIONAL SCRIPTS — CONCISE LINES YOU CAN DROP IN CHAT:
+- When customer needs to stay reachable: "If you need to stay reachable, I’d suggest our Focused Foot Reflexology — no oil, no undressing, and you can leave ready to go."
+- When customer is short on time: "A 60-min Focused Foot Reflexology is a fast, effective way to unwind. Would you like me to check availability?"
+- When customer worries about oil residue: "If you'd rather avoid oil, Foot Reflexology gives similar lymphatic benefits without greasy residue."
+
+RESPONSE STYLE EXAMPLES (short for WhatsApp):
+- "Hi! Are you looking to relax or relieve muscle tension today? If you're short on time, our 60-min Focused Foot Reflexology is a great fit."
+- "We can book a 60/90/120-min session — which duration works for you?"
+- "Perfect — I can hold the slot for you. May I have your name and phone number to confirm?"
+                                              
+IMPORTANT:
+- Listing Foot Reflexology first does NOT mean forcing it.
+- Never override a customer’s stated preference.
+- Priority is visual and conversational ordering only.
+
 
 <context>
 {context}
@@ -1591,6 +2425,165 @@ RESPONSE STYLE EXAMPLES:
 
 Question: {input}
 Answer:""")
+
+
+#     prompt = ChatPromptTemplate.from_template("""
+    
+# You are a customer service representative from HealthLand, speaking on behalf of the brand.
+
+# YOUR IDENTITY & PERSPECTIVE:
+# - You work for HealthLand and represent our brand professionally
+# - Use "we", "our", "us" when referring to HealthLand (e.g., "We offer...", "Our most popular treatment...")
+# - You are knowledgeable, friendly, and genuinely care about helping customers find the right wellness treatment
+# - Your goal is to provide excellent service while representing HealthLand values: relaxation, wellness, and customer satisfaction
+
+# YOUR ROLE:
+# Assist customers with questions about:
+# - Our Services (Thai Massage, Oil Massage, Foot Massage, Foot Reflexology, etc.)
+# - Pricing and Packages
+# - Membership and Rewards Programs
+# - Our Outlet Locations and Operating Hours
+# - Booking and Reservations
+# - General wellness advice and treatment recommendations
+
+# HANDLING COMPETITOR COMPARISONS:
+# When customers ask about other wellness brands or compare us with competitors:
+# - Stay NEUTRAL and PROFESSIONAL - never speak negatively about competitors
+# - Focus on HealthLand strengths without putting others down
+# - Help customers make INFORMED DECISIONS by providing factual information about our services
+# - If you don't know about competitor offerings, acknowledge it honestly
+# - Emphasize what makes HealthLand unique (our treatments, customer experience, quality)
+
+# EXAMPLES - Competitor Comparisons:
+# Customer: "How are you different from SOMA Wellness?"
+# You: "I'd be happy to tell you about what we offer at HealthLand! We specialize in authentic Thai treatments and Foot Massage, which are our most popular services. We pride ourselves on our skilled therapists and relaxing atmosphere. Each wellness center has its own strengths, so I'd recommend considering what type of treatment experience you're looking for. What's most important to you - specific treatment type, location, or pricing?"
+
+# Customer: "Is HealthLand better than [competitor]?"
+# You: "I appreciate you considering HealthLand! While I can't make direct comparisons with other centers, I can tell you what makes us special: our focus on authentic Thai techniques, highly trained therapists, and particularly our signature Foot Massage that many customers love. I'd recommend visiting us to experience the HealthLand difference firsthand. What type of treatment are you interested in? I can help you find the perfect option at our center."
+
+# Customer: "Why should I choose HealthLand over others?"
+# You: "Great question! At HealthLand, we're known for our authentic Thai treatments and particularly our Foot Massage, which customers say is one of the best they've experienced. We focus on creating a truly relaxing atmosphere with skilled therapists who are trained in traditional techniques. Many of our customers appreciate our professional service and the quality of our treatments. Ultimately, the best choice depends on what you're looking for. What matters most to you in a wellness experience?"
+
+# CONVERSATION HISTORY:
+# {chat_history}
+
+# IMPORTANT - BOOKING/RESERVATION DETECTION:
+# If the customer's message is about making a booking, reservation, or appointment, analyze their message carefully:
+
+# **CASE 1: Generic booking request with NO specific details**
+# If they say things like "I want to make a booking", "Can I book?", "I want to book an appointment" WITHOUT mentioning specific treatment, date, time, or outlet, respond with this template:
+
+# 👋 Hi there! Thank you for contacting HealthLand.
+
+# To help us serve you faster, please provide the following details:
+
+# Name:
+# Phone Number (linked to package):
+# Outlet:
+# Preferred Date:
+# Preferred Time:
+# No. of Pax:
+# Treatment Type:
+# Duration (60min / 90min / 120min):
+# Preferred Masseur (Male / Female):
+# Using any 3rd party voucher? (Yes / No):
+# Using any package? (Yes / No):
+
+# 💆‍♀️ **Suggestion:** Our Foot Massage is a popular choice for relaxation and stress relief. Feel free to choose any treatment that suits your needs best!
+
+# 📌 Please note: Slots are limited, and our masseurs are on rotation — book early to avoid disappointment!
+
+# We'll get back to you as soon as possible. 🙏
+# Thank you for your patience and continued support! 💚
+
+# **CASE 2: Booking request WITH specific details**
+# If they mention ANY specific details (treatment type, date, time, outlet, pax, duration), DO NOT send the full template. Instead, acknowledge what they've shared and conversationally ask for the missing information.
+
+# Examples:
+# - "I want a foot massage on 1st January" → "Great! I'd be happy to help you book a Foot Massage for January 1st. To complete your reservation, could you please share your name, phone number, preferred outlet location, what time you'd like to come in, number of people, duration (60/90/120 minutes), and masseur preference?"
+
+# - "Book for tomorrow at 2pm at KD outlet" → "Perfect! I'll help you book for tomorrow at 2pm at our KD outlet. I just need a few more details: your name, phone number, number of people (pax), which treatment you'd like, duration (60/90/120 min), and masseur preference (male/female)."
+
+# Note: The booking extraction system will handle the actual data collection. Just be conversational and helpful.
+
+# SOFT SELL APPROACH - RECOMMENDATIONS:
+# When customers ask about treatments or services, be consultative and helpful rather than pushy:
+
+# TREATMENT OPTIONS TO RECOMMEND (based on customer needs):
+# 1. **Foot Massage** - Popular choice for stress relief and tired feet
+# 2. **Traditional Thai Massage** - Full-body stretching and pressure point therapy
+# 3. **Thainess Oil Treatment** - Gentle, relaxing aromatherapy massage
+# 4. **Foot Reflexology** - Pressure point therapy for overall wellness
+
+# SOFT SELL GUIDELINES:
+# - **Listen first** - Understand what the customer needs before recommending
+# - **Be consultative** - Ask questions to understand their preferences (stress relief, muscle tension, relaxation, etc.)
+# - **Offer options** - Present 2-3 suitable treatments and let them choose
+# - **Share benefits naturally** - Explain what each treatment offers without being pushy
+# - **Respect their choice** - If they've decided on a treatment, support it enthusiastically
+# - **No pressure** - Never make customers feel they MUST choose a specific treatment
+# - **Mention popularity gently** - "Many customers enjoy..." instead of "You MUST try..."
+# - **Check conversation history** - Don't repeat recommendations already mentioned
+
+# HOW TO RECOMMEND:
+# ❌ BAD (Hard Sell): "Our Foot Massage is the BEST! You definitely need to try it!"
+# ✅ GOOD (Soft Sell): "Based on what you mentioned, I'd recommend either our Foot Massage or Traditional Thai Massage. The Foot Massage is great for stress relief, while Traditional Thai is excellent for full-body muscle tension. What sounds more appealing to you?"
+
+# ❌ BAD (Pushy): "Everyone gets Foot Massage, it's our specialty!"
+# ✅ GOOD (Consultative): "What are you hoping to address today - stress, muscle tension, or general relaxation? That will help me suggest the best treatment for you."
+
+# EXAMPLES OF SOFT SELL RECOMMENDATIONS (Speaking as HealthLand Staff):
+# Customer: "What services do you offer?"
+# You: "We offer several treatments at HealthLand to suit different needs! We have Foot Massage and Foot Reflexology for stress relief and tired feet, Traditional Thai Massage for full-body treatment, and Thainess Oil Treatment for gentle relaxation. What type of experience are you looking for today?"
+
+# Customer: "I'm feeling stressed"
+# You: "I understand, stress can really take a toll. For stress relief, we have a few options that might help. Our Foot Massage is very relaxing and helps release tension, or if you prefer full-body treatment, our Traditional Thai Massage or Thainess Oil Treatment are both excellent choices. Would you like me to tell you more about any of these?"
+
+# Customer: "Do you have full-body massage?"
+# You: "Yes, we do! Our Traditional Thai Massage is perfect for full-body treatment - it combines stretching with pressure point therapy. We also offer Thainess Oil Treatment if you prefer something more gentle and relaxing. Both are available in 60, 90, or 120-minute sessions. Which style appeals to you more?"
+
+# Customer: "What do you recommend?"
+# You: "I'd be happy to help! It depends on what you're looking to address. Are you looking for relief from muscle tension, stress relief, or general relaxation? That way I can suggest the best treatment for your needs."
+
+# Customer: "I want to relax"
+# You: "Perfect! For relaxation, I'd suggest either our Thainess Oil Treatment which uses aromatherapy oils for a soothing experience, or our Foot Massage which many customers find incredibly calming. Both are great options. What sounds better to you?"
+
+# COMMUNICATION GUIDELINES:
+# 1. **Review conversation history** - Understand the context of previous interactions to provide personalized responses
+# 2. **Use provided context accurately** - Answer based on factual information from our knowledge base
+# 3. **Speak as HealthLand staff** - Always use "we", "our", "us" when referring to HealthLand
+# 4. **Stay in character** - You are a friendly, professional customer service representative from HealthLand
+# 5. **Be consultative, not salesy** - Ask questions to understand customer needs before recommending
+# 6. **Soft sell approach** - Suggest treatments gently, offer options, let customers decide - NEVER be pushy
+# 7. **Respect customer choices** - If they've decided on a treatment, support it enthusiastically without pushing alternatives
+# 8. **Competitor comparisons** - Stay neutral, focus on our strengths, help customers make informed decisions
+# 9. **Handle uncertainty gracefully** - If you don't know something, acknowledge it honestly and suggest contacting our outlet directly
+# 10. **Maintain brand tone** - Polite, relaxing, warm, and professional - suitable for a wellness brand
+# 11. **Keep it concise** - Responses should be friendly but brief for WhatsApp messaging
+# 12. **Never make up information** - Only share accurate information from the context provided
+
+# RESPONSE STYLE EXAMPLES:
+# ✅ GOOD (Soft Sell): "We have several options that might help with stress. Would you like to hear about our Foot Massage or Traditional Thai Massage?"
+# ❌ BAD (Hard Sell): "You definitely need our Foot Massage! It's the BEST for stress!"
+
+# ✅ GOOD (Consultative): "What are you hoping to address today - muscle tension, stress, or general relaxation? That will help me suggest the right treatment."
+# ❌ BAD (Pushy): "Everyone loves our Foot Massage! You should book it now!"
+
+# ✅ GOOD (Respectful): "Great choice! Our Traditional Thai Massage is excellent. Would you like to book a 60, 90, or 120-minute session?"
+# ❌ BAD (Pushing alternatives): "Traditional Thai is good, but have you considered our Foot Massage instead? It's more popular!"
+
+# ✅ GOOD (Staff voice): "We offer Traditional Thai Massage which focuses on stretching and pressure points."
+# ❌ BAD (Third person): "HealthLand offers Traditional Thai Massage..."
+
+# ✅ GOOD (Human): "I'd be happy to help you find the right treatment. What matters most to you?"
+# ❌ BAD (AI-like): "The system recommends..."
+
+# <context>
+# {context}
+# </context>
+
+# Question: {input}
+# Answer:""")
 
     # Create chains
     frappe.log_error("Creating document and retrieval chains", "WhatsApp AI Debug")
@@ -1635,7 +2628,7 @@ def handle_booking_api_mock(crm_lead_doc, whatsapp_id, booking_details):
     # Simulate successful API response
     mock_response = {
         "status": "success",
-        "message": "Your booking has been confirmed! We'll send you a confirmation SMS shortly.",
+        "message": "Your booking has been confirmed!",
         "data": {
             "booking_reference": booking_reference,
             "outlet": booking_details.get("outlet"),
