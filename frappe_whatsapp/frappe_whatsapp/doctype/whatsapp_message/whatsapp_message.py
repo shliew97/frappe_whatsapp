@@ -29,92 +29,102 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain i
     validate_and_correct_outlet_info
 )
 
-def is_confirmation_message(message):
+def is_confirmation_message(message, context=None):
     """
-    Check if the message is a confirmation (yes, confirm, correct, etc.)
+    Check if the message is a confirmation (yes, confirm, correct, etc.) using LLM.
 
-    IMPORTANT: This should ONLY match explicit, direct confirmations - not casual conversation.
-    Only returns True when the message is SHORT and PRIMARILY a confirmation response.
+    Uses LLM to intelligently detect if user is saying "yes" in various forms.
 
     Args:
         message: User's message text
+        context: Optional context ('awaiting_confirmation', 'awaiting_update', or None)
 
     Returns:
         bool: True if message is a confirmation
     """
-    confirmation_keywords = [
-        'yes', 'yup', 'yeah', 'yep', 'correct', 'right',
-        'confirm', 'confirmed', 'ok', 'okay', 'proceed',
-        'continue', 'good', 'looks good', 'all good',
-        'betul', 'ya', 'ok', 'okie', 'boleh'  # Malay confirmations
-    ]
-
+    # First try simple keyword matching for common cases (faster)
     message_lower = message.lower().strip()
+    simple_confirmations = ['yes', 'yup', 'yeah', 'yep', 'ok', 'okay', 'confirm', 'ya', 'betul', 'boleh']
 
-    # STRICT MATCHING: Only match if the message is short and direct
-    # This prevents casual conversation from triggering confirmation
-
-    # Case 1: Message is EXACTLY a confirmation keyword (e.g., "yes", "ok", "confirm")
-    if message_lower in confirmation_keywords:
+    if message_lower in simple_confirmations:
         return True
 
-    # Case 2: Message STARTS with confirmation keyword + punctuation (e.g., "yes!", "ok.", "yes please")
-    # Allow short follow-up text (under 30 characters total)
-    if len(message_lower) <= 30:
-        for keyword in confirmation_keywords:
-            # Check if message starts with keyword followed by space or punctuation
-            if (message_lower.startswith(keyword + ' ') or
-                message_lower.startswith(keyword + ',') or
-                message_lower.startswith(keyword + '.') or
-                message_lower.startswith(keyword + '!')):
-                return True
+    # For more complex cases, use LLM
+    try:
+        # Only use LLM for short messages (under 50 chars) to avoid processing long messages
+        if len(message) > 50:
+            return False
 
-    # REJECT: Long messages or messages where keyword appears in the middle
-    # (e.g., "I wanted to ask if yes means..." should NOT trigger confirmation)
-    return False
+        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import detect_yes_no_with_llm
+        result = detect_yes_no_with_llm(message, context=context)
+        return result == 'yes'
+    except Exception as e:
+        frappe.log_error("Confirmation Detection Error", f"Error detecting confirmation with LLM: {str(e)}")
+        # Fallback to keyword matching
+        confirmation_keywords = [
+            'yes', 'yup', 'yeah', 'yep', 'correct', 'right',
+            'confirm', 'confirmed', 'ok', 'okay', 'proceed',
+            'continue', 'good', 'looks good', 'all good',
+            'betul', 'ya', 'okie', 'boleh'
+        ]
 
-def is_change_request(message):
+        if len(message_lower) <= 30:
+            for keyword in confirmation_keywords:
+                if (message_lower.startswith(keyword + ' ') or
+                    message_lower.startswith(keyword + ',') or
+                    message_lower.startswith(keyword + '.') or
+                    message_lower.startswith(keyword + '!')):
+                    return True
+
+        return False
+
+def is_change_request(message, context=None):
     """
-    Check if the message is requesting to change booking details
+    Check if the message is requesting to change booking details using LLM.
 
-    IMPORTANT: This should ONLY match explicit change requests - not casual conversation.
-    Only returns True when the message is SHORT and PRIMARILY a rejection/change response.
+    Uses LLM to intelligently detect if user is saying "no" or wants to make changes.
 
     Args:
         message: User's message text
+        context: Optional context ('awaiting_confirmation', 'awaiting_update', or None)
 
     Returns:
         bool: True if message is requesting changes
     """
-    change_keywords = [
-        'no', 'nope', 'wrong', 'change', 'edit', 'modify',
-        'incorrect', 'not correct', 'mistake', 'error',
-        'tidak', 'tak', 'salah', 'ubah', 'tukar'  # Malay
-    ]
-
+    # First try simple keyword matching for common cases (faster)
     message_lower = message.lower().strip()
+    simple_rejections = ['no', 'nope', 'wrong', 'change', 'tidak', 'tak']
 
-    # STRICT MATCHING: Only match if the message is short and direct
-    # This prevents casual conversation from triggering change flow
-
-    # Case 1: Message is EXACTLY a change keyword (e.g., "no", "change", "wrong")
-    if message_lower in change_keywords:
+    if message_lower in simple_rejections:
         return True
 
-    # Case 2: Message STARTS with change keyword + punctuation (e.g., "no!", "change please")
-    # Allow short follow-up text (under 30 characters total)
-    if len(message_lower) <= 30:
-        for keyword in change_keywords:
-            # Check if message starts with keyword followed by space or punctuation
-            if (message_lower.startswith(keyword + ' ') or
-                message_lower.startswith(keyword + ',') or
-                message_lower.startswith(keyword + '.') or
-                message_lower.startswith(keyword + '!')):
-                return True
+    # For more complex cases, use LLM
+    try:
+        # Only use LLM for short messages (under 50 chars) to avoid processing long messages
+        if len(message) > 50:
+            return False
 
-    # REJECT: Long messages or messages where keyword appears in the middle
-    # (e.g., "I have no idea what this means" should NOT trigger change request)
-    return False
+        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import detect_yes_no_with_llm
+        result = detect_yes_no_with_llm(message, context=context)
+        return result == 'no'
+    except Exception as e:
+        frappe.log_error("Change Request Detection Error", f"Error detecting change request with LLM: {str(e)}")
+        # Fallback to keyword matching
+        change_keywords = [
+            'no', 'nope', 'wrong', 'change', 'edit', 'modify',
+            'incorrect', 'not correct', 'mistake', 'error',
+            'tidak', 'tak', 'salah', 'ubah', 'tukar'
+        ]
+
+        if len(message_lower) <= 30:
+            for keyword in change_keywords:
+                if (message_lower.startswith(keyword + ' ') or
+                    message_lower.startswith(keyword + ',') or
+                    message_lower.startswith(keyword + '.') or
+                    message_lower.startswith(keyword + '!')):
+                    return True
+
+        return False
 
 
 def is_general_question(message):
@@ -859,6 +869,35 @@ def handle_text_message_ai(message, whatsapp_id, customer_name, crm_lead_doc=Non
         # Log for debugging
         frappe.log_error("Booking Flow Debug", f"Pending data for {whatsapp_id}:\n{json.dumps(pending_data, indent=2, default=str)}\n\nChat history messages: {len(chat_history)}")
 
+        # PRIORITY 0: Check if user is just acknowledging a confirmed booking
+        # If booking was recently confirmed and user sends simple acknowledgment like "ok thanks", "tq", etc.
+        # respond politely without repeating booking details
+        booking_was_confirmed = pending_data.get('confirmed', False) if pending_data else False
+
+        if booking_was_confirmed:
+            # Use LLM to detect if this is a simple acknowledgment
+            from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import detect_yes_no_with_llm
+            detection_result = detect_yes_no_with_llm(message)
+
+            # Check if message is acknowledgment (not yes/no response, just thanks/ok)
+            message_lower = message.lower().strip()
+            acknowledgment_keywords = ['thank', 'thanks', 'tq', 'ty', 'noted', 'got it', 'terima kasih']
+            is_acknowledgment = any(keyword in message_lower for keyword in acknowledgment_keywords)
+
+            # If it's a simple acknowledgment or non-yes/no short message (under 20 chars)
+            if is_acknowledgment or (detection_result == 'other' and len(message) <= 20):
+                frappe.log_error(
+                    "Simple Acknowledgment After Booking",
+                    f"User sent simple acknowledgment after confirmed booking: {message}\n"
+                    f"Detection: {detection_result}\n"
+                    f"Sending polite response without repeating booking details"
+                )
+
+                # Send simple polite response
+                polite_response = "You're welcome! If you need anything else or have questions, feel free to ask. Have a great day! 😊"
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=polite_response, queue="short", is_async=True)
+                return
+
         # PRIORITY 1: Check for CANCEL intent (highest priority, immediate action)
         from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import has_cancel_intent, handle_cancel_booking_api_mock
         user_wants_to_cancel = has_cancel_intent(message)
@@ -922,7 +961,7 @@ If you'd like to make a new booking in the future, just let us know! 💚"""
                 # Skip all booking logic - fall through to RAG chain
                 # The awaiting_update_confirmation flag stays True for next message
 
-            elif is_confirmation_message(message):
+            elif is_confirmation_message(message, context='awaiting_update'):
                 # User confirmed the update - proceed with API call
                 frappe.log_error("Update Confirmed", f"User confirmed update for {whatsapp_id}")
 
@@ -977,7 +1016,7 @@ Thank you for updating your booking with HealthLand! 💚"""
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
                     return
 
-            elif is_change_request(message):
+            elif is_change_request(message, context='awaiting_update'):
                 # User said no - cancel the update
                 frappe.log_error("Update Cancelled", f"User cancelled update for {whatsapp_id}")
 
@@ -1295,7 +1334,7 @@ Is this correct? Please reply:
 
                     else:
                         # Message is NOT about other topics, so check if it's a confirmation response
-                        if is_confirmation_message(message):
+                        if is_confirmation_message(message, context='awaiting_confirmation'):
                             # User confirmed - proceed with booking
                             frappe.log_error("Booking Confirmation", f"User confirmed booking for {whatsapp_id}")
 
@@ -1418,7 +1457,7 @@ Is everything correct? Please reply:
                                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
                                 return
 
-                        elif is_change_request(message):
+                        elif is_change_request(message, context='awaiting_confirmation'):
                             # User's response contains change-related keywords (e.g., "no", "change", "wrong")
                             # Use LLM to intelligently determine if they want to:
                             # 1. Update specific fields with provided values (e.g., "no change name to duxton"), OR

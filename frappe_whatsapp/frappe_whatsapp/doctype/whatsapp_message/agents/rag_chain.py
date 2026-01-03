@@ -26,6 +26,86 @@ def clear_rag_chain_cache():
     frappe.log_error("RAG chain cache cleared", "WhatsApp AI Debug")
     return "RAG chain cache cleared successfully"
 
+def detect_yes_no_with_llm(message, context=None):
+    """
+    Use LLM to intelligently detect if a message means "yes", "no", or "other".
+
+    This handles various forms of affirmative and negative responses including:
+    - yes, yep, yup, yeah, sure, ok, okay, confirm, correct, right, go ahead
+    - no, nope, nah, wrong, incorrect, change
+    - And their variations in different languages
+
+    Args:
+        message: User's message text
+        context: Optional context string ('awaiting_confirmation', 'awaiting_update', or None)
+
+    Returns:
+        str: 'yes', 'no', or 'other'
+    """
+    if not LANGCHAIN_AVAILABLE:
+        return 'other'
+
+    try:
+        # Get WhatsApp Settings for API key
+        whatsapp_settings = frappe.get_single("WhatsApp Settings")
+        openai_key = whatsapp_settings.get_password("openai_api_key")
+
+        if not openai_key:
+            return 'other'
+
+        # Create LLM instance with fast model
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0,
+            openai_api_key=openai_key,
+            timeout=10,
+            max_retries=1
+        )
+
+        # Build context-aware prompt
+        context_info = ""
+        if context == 'awaiting_confirmation':
+            context_info = "\n**IMPORTANT CONTEXT**: The customer was just shown their booking details and asked to confirm with YES or NO. Messages like 'ok', 'sure', 'go ahead' should be treated as YES in this context."
+        elif context == 'awaiting_update':
+            context_info = "\n**IMPORTANT CONTEXT**: The customer was just shown updated booking details and asked to confirm the update with YES or NO. Messages like 'ok', 'sure', 'go ahead' should be treated as YES in this context."
+
+        detection_prompt = f"""You are analyzing a customer's message to determine if it means "YES", "NO", or something else.
+
+CUSTOMER MESSAGE: "{message}"{context_info}
+
+TASK: Determine if this message is:
+1. A confirmation/affirmative response (YES) - Examples: yes, yep, yup, yeah, sure, ok, okay, k, confirm, confirmed, correct, right, go ahead, proceed, sounds good, looks good, all good, fine, agree, betul, ya, boleh
+2. A rejection/negative response (NO) - Examples: no, nope, nah, wrong, incorrect, not right, change, modify, edit, cancel, tidak, tak, salah
+3. Something else entirely (OTHER) - Examples: questions, statements, requests for information
+
+IMPORTANT RULES:
+- If context indicates we're awaiting confirmation, treat short affirmative messages like "ok", "sure", "k" as YES
+- Only return "YES" if the message is affirmative/confirming
+- Only return "NO" if the message is negative/rejecting
+- Return "OTHER" if it's a question, statement, or request for information
+- If message is just "thank you" or "thanks" WITHOUT any affirmation, return OTHER
+- If message is "ok thanks" or "sure thanks" during confirmation context, return YES
+
+OUTPUT: Reply with ONLY one word: YES, NO, or OTHER"""
+
+        response = llm.invoke(detection_prompt)
+        result = response.content.strip().upper()
+
+        # Normalize response
+        if result == 'YES':
+            return 'yes'
+        elif result == 'NO':
+            return 'no'
+        else:
+            return 'other'
+
+    except Exception as e:
+        frappe.log_error(
+            "Yes/No Detection Error",
+            f"Error detecting yes/no with LLM: {str(e)}\n{frappe.get_traceback()}"
+        )
+        return 'other'
+
 def load_outlet_data():
     """
     Load outlet data from the outlet_data.json file.
@@ -1435,6 +1515,11 @@ def extract_booking_details(message, existing_data=None, chat_history=None):
             booking_info['treatment_type'] = "You may select treatment at the outlet, but will be subject to availability"
             frappe.log_error("Default Treatment Applied", "User didn't mention treatment - will select at outlet")
 
+        # If using_package not mentioned, default to 'no'
+        if 'using_package' not in booking_info or not booking_info.get('using_package'):
+            booking_info['using_package'] = 'no'
+            frappe.log_error("Default Package Applied", "User didn't mention package - defaulting to 'no'")
+
         # Define required fields
         required_fields = {
             'outlet': 'Outlet',
@@ -1775,12 +1860,13 @@ def clear_pending_booking_data(crm_lead_doc):
     except Exception as e:
         frappe.log_error("Booking Cache Clear Error", f"Error clearing cache: {str(e)}")
 
-def format_missing_fields_message(missing_fields):
+def format_missing_fields_message(missing_fields, extracted_data=None):
     """
     Format a friendly message asking for missing booking fields.
 
     Args:
         missing_fields: List of missing field labels
+        extracted_data: Optional dict of extracted booking data to check if user provided any info
 
     Returns:
         str: Formatted message
@@ -1790,9 +1876,26 @@ def format_missing_fields_message(missing_fields):
 
     fields_list = "\n".join([f"- {field}" for field in missing_fields])
 
-    return f"""Thank you for providing your booking details!
+    # Check if user actually provided any data (filter out defaults)
+    user_provided_data = False
+    if extracted_data:
+        default_values = {1, 90, "You may select treatment at the outlet, but will be subject to availability"}
+        for key, value in extracted_data.items():
+            if value not in default_values:
+                user_provided_data = True
+                break
+
+    # Only thank if user actually provided some information
+    if user_provided_data:
+        return f"""Thank you for providing your booking details!
 
 We still need the following information to complete your booking:
+
+{fields_list}
+
+Please provide the missing information so we can process your booking. 🙏"""
+    else:
+        return f"""We need the following information to complete your booking:
 
 {fields_list}
 
@@ -1817,7 +1920,7 @@ def generate_smart_missing_fields_prompt(chat_history, current_message, extracte
 
     # If LLM is not available, fall back to standard message
     if not LANGCHAIN_AVAILABLE:
-        return format_missing_fields_message(missing_fields)
+        return format_missing_fields_message(missing_fields, extracted_data)
 
     try:
         # Get WhatsApp Settings for API key
@@ -1825,7 +1928,7 @@ def generate_smart_missing_fields_prompt(chat_history, current_message, extracte
         openai_key = whatsapp_settings.get_password("openai_api_key")
 
         if not openai_key:
-            return format_missing_fields_message(missing_fields)
+            return format_missing_fields_message(missing_fields, extracted_data)
 
         # Format chat history
         formatted_history = format_chat_history(chat_history) if chat_history else "No previous conversation."
@@ -1912,7 +2015,7 @@ Generate ONLY the message text (no quotes, no formatting tags, just the raw mess
             f"Error generating smart prompt: {str(e)}\n{frappe.get_traceback()}"
         )
         # Fallback to standard message
-        return format_missing_fields_message(missing_fields)
+        return format_missing_fields_message(missing_fields, extracted_data)
 
 def get_rag_chain(crm_lead_doc_name):
     """
