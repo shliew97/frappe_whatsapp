@@ -15,7 +15,11 @@
   "app_id",
   "webhook_verify_token",
   "openai_api_key",
-  "pinecone_api_key"
+  "pinecone_api_key",
+  "message_settings_section",
+  "enable_message_debouncing",
+  "message_debounce_timeout",
+  "incomplete_message_timeout"
  ],
  "fields": [
   {
@@ -69,6 +73,34 @@
    "fieldname": "pinecone_api_key",
    "fieldtype": "Password",
    "label": "pinecone_api_key"
+  },
+  {
+   "fieldname": "message_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Message Handling Settings"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_message_debouncing",
+   "fieldtype": "Check",
+   "label": "Enable Message Debouncing",
+   "description": "Batch multiple rapid messages from the same user to provide a single combined response"
+  },
+  {
+   "default": "2",
+   "depends_on": "eval:doc.enable_message_debouncing",
+   "fieldname": "message_debounce_timeout",
+   "fieldtype": "Int",
+   "label": "Debounce Timeout (seconds)",
+   "description": "Wait time (in seconds) after the last message before processing. Recommended: 2-3 seconds"
+  },
+  {
+   "default": "5",
+   "depends_on": "eval:doc.enable_message_debouncing",
+   "fieldname": "incomplete_message_timeout",
+   "fieldtype": "Int",
+   "label": "Incomplete Message Timeout (seconds)",
+   "description": "Wait time for incomplete messages (e.g., 'I want to book...'). Recommended: 5 seconds"
   }
  ],
  "grid_page_length": 50,

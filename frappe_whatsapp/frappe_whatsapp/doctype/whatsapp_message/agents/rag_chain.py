@@ -1058,7 +1058,8 @@ def is_booking_details_message(message):
 
     # Method 2: Check for booking intent (simple keywords)
     message_lower = message.lower()
-    if has_booking_intent(message):
+    has_intent = has_booking_intent(message)
+    if has_intent:
         return True
 
     # Method 3: Check for generic booking data patterns
@@ -1070,14 +1071,14 @@ def is_booking_details_message(message):
             word in message_lower
             for word in ['soma', 'kd', 'kota damansara', 'puchong', 'cheras', 'setapak', 'sunway', 'velocity', 'pj']
         )
-        has_date = any(
+        has_date = bool(any(
             word in message_lower
             for word in ['tomorrow', 'today', 'tmr']
-        ) or re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', message)
+        ) or re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', message))
 
-        has_time = re.search(r'\d{1,2}\s*(am|pm|AM|PM)', message) or re.search(r'\d{1,2}:\d{2}', message)
+        has_time = bool(re.search(r'\d{1,2}\s*(am|pm|AM|PM)', message) or re.search(r'\d{1,2}:\d{2}', message))
 
-        has_phone = re.search(r'\b0\d{9,10}\b', message)
+        has_phone = bool(re.search(r'\b0\d{9,10}\b', message))
 
         # If message has outlet/location + (date or time or phone), likely booking data
         if has_outlet and (has_date or has_time or has_phone):
@@ -1097,7 +1098,7 @@ def is_booking_details_message(message):
             return True
 
     # Pattern 2: Natural language booking with details
-    if has_booking_intent:
+    if has_intent:
         # Check if message has specific details (not just "I want to book")
         has_specifics = any([
             re.search(r'\d{1,2}\s*(am|pm)', message_lower),  # time
@@ -1115,7 +1116,7 @@ def is_booking_details_message(message):
 
     frappe.log_error(
         "Booking Detection Debug",
-        f"NOT detected as booking message\nLines: {len(lines)}\nField count: {field_count}\nHas intent: {has_booking_intent}"
+        f"NOT detected as booking message\nLines: {len(lines)}\nField count: {field_count}\nHas intent: {has_intent}"
     )
     return False
 
@@ -1829,6 +1830,15 @@ def generate_smart_missing_fields_prompt(chat_history, current_message, extracte
         # Format chat history
         formatted_history = format_chat_history(chat_history) if chat_history else "No previous conversation."
 
+        # Filter out default values - only show what user actually provided
+        user_provided_data = {}
+        default_values = {1, 90, "You may select treatment at the outlet, but will be subject to availability"}
+
+        for key, value in extracted_data.items():
+            # Skip fields with default values that user didn't explicitly provide
+            if value not in default_values:
+                user_provided_data[key] = value
+
         # Create LLM instance
         llm = ChatOpenAI(
             model="gpt-5-chat-latest",
@@ -1847,18 +1857,19 @@ CONVERSATION HISTORY:
 CURRENT CUSTOMER MESSAGE:
 {current_message}
 
-BOOKING INFORMATION COLLECTED SO FAR:
-{json.dumps(extracted_data, indent=2, default=str)}
+BOOKING INFORMATION PROVIDED BY CUSTOMER:
+{json.dumps(user_provided_data, indent=2, default=str) if user_provided_data else "None yet - this is the first booking message"}
 
 MISSING REQUIRED FIELDS:
 {', '.join(missing_fields)}
 
 Your task is to generate a friendly, conversational WhatsApp message that:
-1. Acknowledges what the customer has already provided
-2. Asks for the missing information in a natural, conversational way
-3. Is concise and suitable for WhatsApp (not too long)
-4. Maintains HealthLand's friendly, relaxing brand tone
-5. Uses appropriate emojis sparingly
+1. ONLY acknowledge what the customer has ACTUALLY PROVIDED (shown above) - DO NOT thank them for information they didn't share
+2. If customer provided no information yet, skip the acknowledgment and go straight to asking for what you need
+3. Asks for the missing information in a natural, conversational way
+4. Is concise and suitable for WhatsApp (not too long)
+5. Maintains HealthLand's friendly, relaxing brand tone
+6. Uses appropriate emojis sparingly
 
 GUIDELINES:
 - Don't just list the missing fields - weave them into a natural conversation
@@ -1869,6 +1880,7 @@ GUIDELINES:
 - End with encouragement about looking forward to their visit
 - DO NOT use asterisks (*), underscores (_), or any markdown formatting - use plain text only
 - When emphasizing, use capital letters or line breaks instead of formatting symbols
+- IMPORTANT: Only acknowledge info the customer actually provided - don't mention pax, duration, or treatment type unless they explicitly stated it
 
 OUTPUT:
 Generate ONLY the message text (no quotes, no formatting tags, just the raw message).

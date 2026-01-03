@@ -408,14 +408,31 @@ class WhatsAppMessage(Document):
             #     whatsapp_message_reply.message = random.choice(random_replies)
             # whatsapp_message_reply.insert(ignore_permissions=True)
             is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
+            # Check if message should be debounced
+            from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.message_debouncer import should_debounce_message, queue_message
 
-            if crm_lead_doc.is_outlet_frontdesk:
+            # Unpack tuple return from should_debounce_message()
+            should_debounce, is_incomplete = should_debounce_message(self)
+
+            print("Result: ")
+            print(should_debounce)
+            print(is_incomplete)
+
+            if should_debounce:
+                # Queue the message for batched processing
+                # Pass is_incomplete flag to use appropriate timeout
+                print("Reached here")
+                queue_message(self, is_incomplete=is_incomplete)
+                # Skip immediate processing - will be handled by debouncer
+                # Still update lead status below
+            elif crm_lead_doc.is_outlet_frontdesk:
                 handle_outlet_frontdesk(self.message, self.get("from"), crm_lead_doc)
             else:
                 if crm_lead_doc.is_special_attention:
                     create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "New")
                 if self.content_type == "text":
                     handle_text_message(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
+                    print("Ignored queue message")
                     handle_text_message_ai(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
                 elif self.content_type == "flow":
                     handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
