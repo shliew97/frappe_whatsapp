@@ -423,8 +423,6 @@ class WhatsAppMessage(Document):
                 # Pass is_incomplete flag to use appropriate timeout
                 print("Reached here")
                 queue_message(self, is_incomplete=is_incomplete)
-                # Skip immediate processing - will be handled by debouncer
-                # Still update lead status below
             elif crm_lead_doc.is_outlet_frontdesk:
                 handle_outlet_frontdesk(self.message, self.get("from"), crm_lead_doc)
             else:
