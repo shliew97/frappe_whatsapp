@@ -54,9 +54,10 @@ def post(form_dict):
 		messages = data["entry"]["changes"][0]["value"].get("messages", [])
 		contacts = data["entry"]["changes"][0]["value"].get("contacts", [])
 
+	print("Webhook: ", messages)
 	if messages:
 		for message in messages:
-			if message['from'] not in ["601136269063", "60178699823", "601116130615", "60166127386", "60124727268", "60173491791"]:
+			if message['from'] not in ["60165373622", "601136269063", "60178699823", "601116130615", "60166127386", "60124727268", "60173491791"]:
 				continue
 			message_type = message['type']
 			is_reply = True if message.get('context') and not message.get('context').get('forwarded') else False
@@ -90,18 +91,38 @@ def post(form_dict):
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 			elif message_type == 'interactive':
-				frappe.get_doc({
-					"doctype": "WhatsApp Message",
-					"type": "Incoming",
-					"from": message['from'],
-					"message": message['interactive']['button_reply']['title'],
-					"interactive_id": message['interactive']['button_reply']['id'],
-					"message_id": message['id'],
-					"content_type": "flow",
-					"from_name": contacts[0]["profile"]["name"],
-					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
-					"is_forwarded": is_forwarded,
-				}).insert(ignore_permissions=True)
+				interactive_data = message['interactive']
+				interactive_type = interactive_data.get('type')
+
+				# Handle button_reply (from interactive button messages)
+				if interactive_type == 'button_reply':
+					frappe.get_doc({
+						"doctype": "WhatsApp Message",
+						"type": "Incoming",
+						"from": message['from'],
+						"message": interactive_data['button_reply']['title'],
+						"interactive_id": interactive_data['button_reply']['id'],
+						"message_id": message['id'],
+						"content_type": "flow",
+						"from_name": contacts[0]["profile"]["name"],
+						"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+						"is_forwarded": is_forwarded,
+					}).insert(ignore_permissions=True)
+
+				# Handle list_reply (from interactive list messages)
+				elif interactive_type == 'list_reply':
+					frappe.get_doc({
+						"doctype": "WhatsApp Message",
+						"type": "Incoming",
+						"from": message['from'],
+						"message": interactive_data['list_reply']['title'],
+						"interactive_id": interactive_data['list_reply']['id'],
+						"message_id": message['id'],
+						"content_type": "list_reply",
+						"from_name": contacts[0]["profile"]["name"],
+						"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+						"is_forwarded": is_forwarded,
+					}).insert(ignore_permissions=True)
 			elif message_type in ["image", "audio", "video", "document", "sticker"]:
 				settings = frappe.get_doc(
 							"WhatsApp Settings", "WhatsApp Settings",
@@ -166,6 +187,23 @@ def post(form_dict):
 					"message_id": message['id'],
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
+					"content_type": message_type,
+					"from_name": contacts[0]["profile"]["name"],
+					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
+					"is_forwarded": is_forwarded,
+				}).insert(ignore_permissions=True)
+			elif message_type == "location":
+				print()
+				# Handle location messages - store as JSON with latitude, longitude, name, address
+				location_data = message.get('location', {})
+				frappe.get_doc({
+					"doctype": "WhatsApp Message",
+					"type": "Incoming",
+					"from": message['from'],
+					"message_id": message['id'],
+					"reply_to_message_id": reply_to_message_id,
+					"is_reply": is_reply,
+					"message": json.dumps(location_data),
 					"content_type": message_type,
 					"from_name": contacts[0]["profile"]["name"],
 					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),

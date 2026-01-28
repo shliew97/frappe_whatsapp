@@ -427,8 +427,10 @@ class WhatsAppMessage(Document):
             print("Result: ")
             print(should_debounce)
             print(is_incomplete)
-
-            if should_debounce:
+            if crm_lead_doc.is_outlet_staff:
+                print("Outlet staff handling HR Flow")
+                handle_outlet_staff_hr(self, crm_lead_doc)
+            elif should_debounce:
                 # Queue the message for batched processing
                 # Pass is_incomplete flag to use appropriate timeout
                 print("Reached here")
@@ -444,6 +446,8 @@ class WhatsAppMessage(Document):
                     handle_text_message_ai(self.message, self.get("from"), self.get("from_name"), crm_lead_doc)
                 elif self.content_type == "flow":
                     handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
+                elif self.content_type == "list_reply":
+                    handle_interactive_list_reply(self.get("from"), self.get("from_name"), self.interactive_id, self.message, crm_lead_doc)
                 elif is_button_reply:
                     handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
                 else:
@@ -839,6 +843,357 @@ def validate_phone_number(cleaned_number: str) -> bool:
     """
     return 10 <= len(cleaned_number) <= 15
 
+CLOCK_IN_ENDPOINT = "/api/method/healthland_pos.api.clock_in"
+
+
+def handle_clock_in_api(staff_doc, whatsapp_id, clock_details):
+    """
+    Handle clock in / clock out API call.
+
+    Args:
+        staff_doc: Staff document
+        whatsapp_id: WhatsApp phone number (used as phone_number)
+        clock_details: Dictionary containing clock information with keys:
+            - latitude: float (optional)
+            - longitude: float (optional)
+            - image_base64: base64 image string (optional)
+            - log_type: "IN" or "OUT"
+
+    Returns:
+        dict: Response from API or error dict
+    """
+
+    integration_settings = frappe.db.get_all(
+        "Integration Settings",
+        filters={"active": 1},
+        pluck="name"
+    )
+
+    if not integration_settings:
+        return {"success": False, "message": "No active integration settings found"}
+
+    for integration_setting in integration_settings:
+        integration_settings_doc = frappe.get_doc(
+            "Integration Settings",
+            integration_setting
+        )
+
+        url = integration_settings_doc.site_url + CLOCK_IN_ENDPOINT
+
+        headers = {
+            "Authorization": "Basic {0}".format(
+                integration_settings_doc.get_password("access_token")
+            ),
+            "Content-Type": "application/json"
+        }
+
+        request_body = {
+            "phone_number": whatsapp_id,
+            "latitude": clock_details.get("latitude"),
+            "longitude": clock_details.get("longitude"),
+            "image_url": clock_details.get("image_url"),
+            "log_type": clock_details.get("log_type", "IN")
+        }
+
+        try:
+            response = requests.post(
+                url,
+                data=json.dumps(request_body, default=str),
+                headers=headers,
+                timeout=30
+            )
+
+            response.raise_for_status()
+            response_data = response.json()
+
+            return response_data
+
+        except requests.Timeout:
+            frappe.log_error("Clock API Timeout", "Clock in request timed out after 30 seconds")
+            return {"success": False, "message": "Request timed out. Please try again."}
+
+        except requests.RequestException as e:
+            frappe.log_error("Clock API Error", f"Clock in API error: {str(e)}")
+            return {"success": False, "message": f"API error: {str(e)}"}
+
+    return {"success": False, "message": "Failed to process clock request"}
+
+import base64
+
+
+def get_clock_log_type(crm_lead_doc):
+    """Get stored log type from cache (IN or OUT)."""
+    try:
+        cache_key = f"clock_log_type_{crm_lead_doc.name}"
+        return frappe.cache().get_value(cache_key) or "IN"
+    except Exception:
+        return "IN"
+
+
+def set_clock_log_type(crm_lead_doc, log_type):
+    """Store log type in cache (expires in 10 minutes)."""
+    try:
+        cache_key = f"clock_log_type_{crm_lead_doc.name}"
+        frappe.cache().set_value(cache_key, log_type, expires_in_sec=600)
+    except Exception as e:
+        frappe.log_error("Clock Log Type Cache Error", str(e))
+
+
+def send_staff_hr_menu(crm_lead_doc, whatsapp_id):
+    """
+    Send interactive list menu to staff with HR options.
+
+    Menu includes:
+    - Clock In
+    - Clock Out
+    - Annual Leave
+    - Medical Leave
+
+    Args:
+        crm_lead_doc: CRM Lead document for the staff member
+        whatsapp_id: Staff member's WhatsApp ID
+    """
+    sections = [
+        {
+            "title": "Attendance",
+            "rows": [
+                {
+                    "id": "clock_in",
+                    "title": "Clock In",
+                    "description": "Record your arrival at work"
+                },
+                {
+                    "id": "clock_out",
+                    "title": "Clock Out",
+                    "description": "Record your departure from work"
+                }
+            ]
+        },
+        {
+            "title": "Leave Requests",
+            "rows": [
+                {
+                    "id": "leave_annual",
+                    "title": "Annual Leave",
+                    "description": "Apply for annual leave"
+                },
+                {
+                    "id": "leave_medical",
+                    "title": "Medical Leave",
+                    "description": "Apply for medical leave (MC)"
+                }
+            ]
+        }
+    ]
+
+    enqueue(
+        method=send_interactive_list_message_with_delay,
+        crm_lead_doc=crm_lead_doc,
+        whatsapp_id=whatsapp_id,
+        header_text="Staff Menu",
+        body_text="Hi! Please select an option from the menu below:",
+        footer_text="HR Self-Service",
+        button_text="View Menu",
+        sections=sections,
+        queue="short",
+        is_async=True
+    )
+
+
+def handle_outlet_staff_hr(whatsapp_message, crm_lead_doc):
+    """
+    Handle outlet staff HR clock in/out module.
+    Forwards image/location to API which handles merging within 5-min window.
+
+    Args:
+        whatsapp_message: The WhatsApp Message document
+        crm_lead_doc: The CRM Lead document for the outlet staff
+    """
+    print("Outlet staff Clock in module")
+
+    content_type = whatsapp_message.content_type
+    whatsapp_id = whatsapp_message.get("from")
+    message_text = (whatsapp_message.message or "").strip().lower()
+
+    # # Get current log type from cache
+    # log_type = get_clock_log_type(crm_lead_doc)
+
+    # Handle "clock in" or "clock out" text messages - send location request
+    if content_type == "text":
+        if "clock in" in message_text:
+            # Store the log type for when location is received
+            set_clock_log_type(crm_lead_doc, "IN")
+
+            location_request_text = (
+                "📍 *Clock In Request*\n\n"
+                "Please share your current location to complete your clock in.\n\n"
+                "Tap the button below to send your location."
+            )
+
+            enqueue(
+                method=send_location_request_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=location_request_text,
+                queue="short",
+                is_async=True
+            )
+            return
+
+        elif "clock out" in message_text:
+            # Store the log type for when location is received
+            set_clock_log_type(crm_lead_doc, "OUT")
+
+            location_request_text = (
+                "📍 *Clock Out Request*\n\n"
+                "Please share your current location to complete your clock out.\n\n"
+                "Tap the button below to send your location."
+            )
+
+            enqueue(
+                method=send_location_request_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=location_request_text,
+                queue="short",
+                is_async=True
+            )
+            return
+
+        else:
+            # Send interactive list menu for any other text message
+            send_staff_hr_menu(crm_lead_doc, whatsapp_id)
+            return
+
+    if content_type == "image":
+        # Frappe stores /files/xxx → convert to absolute URL
+        image_url_domain = frappe.utils.get_url(whatsapp_message.attach)
+        print(f"Received image from outlet staff: {image_url_domain}")
+
+        # If the message has a caption, it’s optional
+        # Combine URL with message if needed (depends on your use case)
+        image_url = image_url_domain + whatsapp_message.message  # you can append caption if needed
+        print(f"Final image URL: {image_url}")
+
+        try:
+            # Call API with image URL only
+            clock_details = {
+                "image_url": image_url,
+                "log_type": "IN"
+            }
+
+            api_response = handle_clock_in_api(
+                staff_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                clock_details=clock_details
+            )
+            print("API Response:", api_response)
+
+            # ✅ Handle nested message properly
+            msg_obj = api_response.get("message", {})
+            success = msg_obj.get("success", False)
+            response_msg = msg_obj.get("message", "Image received.")
+
+            reply_msg = f"{'✅' if success else '❌'} {response_msg}"
+
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=reply_msg,
+                queue="short",
+                is_async=True
+            )
+
+        except Exception as e:
+            frappe.log_error(title="Clock In Image Error", message=str(e))
+            print("Image failed:", e)
+
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text="❌ Failed to process image. Please resend a clear photo.",
+                queue="short",
+                is_async=True
+            )
+
+        return
+
+        
+    if content_type == "location":
+        try:
+            location_data = (
+                json.loads(whatsapp_message.message)
+                if whatsapp_message.message
+                else {}
+            )
+
+            latitude = location_data.get("latitude")
+            print(latitude)
+            longitude = location_data.get("longitude")
+            print(longitude)
+
+            if not latitude or not longitude:
+                raise ValueError("Missing latitude or longitude")
+
+            # Get the log type from cache (set when user typed "clock in" or "clock out")
+            log_type = get_clock_log_type(crm_lead_doc)
+
+            # Call API with location only
+            clock_details = {
+                "latitude": latitude,
+                "longitude": longitude,
+                "log_type": log_type
+            }
+
+            api_response = handle_clock_in_api(
+                staff_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                clock_details=clock_details
+            )
+            print("Response: ")
+            print(api_response)
+            msg_obj = api_response.get("message", {})
+            print(msg_obj)
+
+            success = msg_obj.get("success", False)
+            response_msg = msg_obj.get("message", "Location received.")
+
+            reply_msg = f"{'Success' if success else 'Failed'}: {response_msg}"
+
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=reply_msg,
+                queue="short",
+                is_async=True
+            )
+
+        except Exception as e:
+            frappe.log_error(title="Clock In Location Error", message=str(e))
+            print("Locations: ", e)
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text="Failed to process location. Please try again.",
+                queue="short",
+                is_async=True
+            )
+        return
+
+    # Handle list_reply (staff responded to an interactive list message)
+    if content_type == "list_reply":
+        handle_interactive_list_reply(
+            whatsapp_id,
+            crm_lead_doc.lead_name or crm_lead_doc.first_name,
+            whatsapp_message.interactive_id,
+            whatsapp_message.message,
+            crm_lead_doc
+        )
+        return
 
 def handle_text_message_ai(message, whatsapp_id, customer_name, crm_lead_doc=None):
     """
@@ -2049,6 +2404,80 @@ def send_interactive_message(crm_lead_doc, whatsapp_id, text, buttons):
 
     return False
 
+def send_location_request_message(crm_lead_doc, whatsapp_id, text):
+    """
+    Send a location request message to the user.
+    The user will see a button to share their current location.
+
+    Based on WhatsApp Cloud API:
+    https://developers.facebook.com/docs/whatsapp/cloud-api/messages/location-request-messages
+    """
+    whatsapp_settings = frappe.get_single("WhatsApp Settings")
+
+    WHATSAPP_SEND_MESSAGE_URL = "{0}/{1}/{2}/messages".format(
+        whatsapp_settings.url, whatsapp_settings.version, whatsapp_settings.phone_id
+    )
+    BEARER_TOKEN = whatsapp_settings.get_password("token")
+
+    request_body = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": whatsapp_id,
+        "type": "interactive",
+        "interactive": {
+            "type": "location_request_message",
+            "body": {
+                "text": text
+            },
+            "action": {
+                "name": "send_location"
+            }
+        }
+    }
+
+    headers = {
+        "authorization": f"Bearer {BEARER_TOKEN}",
+        "content-type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            WHATSAPP_SEND_MESSAGE_URL,
+            data=json.dumps(request_body),
+            headers=headers,
+            timeout=5
+        )
+        response_data = response.json()
+        message_id = response_data["messages"][0]["id"]
+
+        doc = frappe.new_doc("WhatsApp Message")
+        doc.update(
+            {
+                "reference_doctype": "CRM Lead",
+                "reference_name": crm_lead_doc.name,
+                "message_type": "Manual",
+                "message": text,
+                "content_type": "text",
+                "to": whatsapp_id,
+                "message_id": message_id,
+                "status": "Success",
+                "timestamp": get_datetime(),
+                "type": "Outgoing"
+            }
+        )
+        doc.insert(ignore_permissions=True)
+        return True
+    except Exception as e:
+        frappe.log_error("Location Request Message Error", str(e))
+        return False
+
+
+def send_location_request_message_with_delay(crm_lead_doc, whatsapp_id, text):
+    """Send location request message with a delay."""
+    time.sleep(1)
+    send_location_request_message(crm_lead_doc, whatsapp_id, text)
+
+
 def send_interactive_cta_message_with_delay(crm_lead_doc, whatsapp_id, text, cta_label, cta_url):
     time.sleep(2)
     send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta_url)
@@ -2110,6 +2539,250 @@ def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta
         return True
 
     return False
+
+
+def send_interactive_list_message_with_delay(crm_lead_doc, whatsapp_id, header_text, body_text, footer_text, button_text, sections):
+    """
+    Send interactive list message with a delay.
+
+    Args:
+        crm_lead_doc: CRM Lead document
+        whatsapp_id: Recipient WhatsApp ID
+        header_text: Header text for the list message
+        body_text: Body text for the list message
+        footer_text: Footer text (optional, can be None)
+        button_text: Text displayed on the button to open the list
+        sections: List of sections, each containing title and rows
+            Example:
+            [
+                {
+                    "title": "Section 1",
+                    "rows": [
+                        {"id": "row_1", "title": "Option 1", "description": "Description 1"},
+                        {"id": "row_2", "title": "Option 2", "description": "Description 2"}
+                    ]
+                }
+            ]
+    """
+    time.sleep(2)
+    return send_interactive_list_message(crm_lead_doc, whatsapp_id, header_text, body_text, footer_text, button_text, sections)
+
+
+def send_interactive_list_message(crm_lead_doc, whatsapp_id, header_text, body_text, footer_text, button_text, sections):
+    """
+    Send an interactive list message via WhatsApp Cloud API.
+
+    Interactive list messages allow users to select from a list of options.
+    Based on WhatsApp Cloud API:
+    https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-list-messages
+
+    Args:
+        crm_lead_doc: CRM Lead document for reference
+        whatsapp_id: Recipient WhatsApp ID (with country code)
+        header_text: Header text for the list message (max 60 chars)
+        body_text: Body text explaining the list options (max 1024 chars)
+        footer_text: Optional footer text (max 60 chars), can be None
+        button_text: Text displayed on the button to open the list (max 20 chars)
+        sections: List of sections containing rows
+            Each section: {"title": "Section Title", "rows": [...]}
+            Each row: {"id": "unique_id", "title": "Row Title", "description": "Optional description"}
+            - Max 10 sections
+            - Max 10 rows per section
+            - Row title max 24 chars
+            - Row description max 72 chars
+
+    Returns:
+        dict: Response containing success status and message_id if successful
+    """
+    whatsapp_settings = frappe.get_single("WhatsApp Settings")
+
+    WHATSAPP_SEND_MESSAGE_URL = "{0}/{1}/{2}/messages".format(
+        whatsapp_settings.url, whatsapp_settings.version, whatsapp_settings.phone_id
+    )
+    BEARER_TOKEN = whatsapp_settings.get_password("token")
+
+    # Build the interactive list message payload
+    interactive = {
+        "type": "list",
+        "body": {
+            "text": body_text
+        },
+        "action": {
+            "button": button_text,
+            "sections": sections
+        }
+    }
+
+    # Add optional header
+    if header_text:
+        interactive["header"] = {
+            "type": "text",
+            "text": header_text
+        }
+
+    # Add optional footer
+    if footer_text:
+        interactive["footer"] = {
+            "text": footer_text
+        }
+
+    request_body = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": whatsapp_id,
+        "type": "interactive",
+        "interactive": interactive
+    }
+
+    headers = {
+        "authorization": f"Bearer {BEARER_TOKEN}",
+        "content-type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            WHATSAPP_SEND_MESSAGE_URL,
+            data=json.dumps(request_body),
+            headers=headers,
+            timeout=5
+        )
+        response_data = response.json()
+
+        if not response.ok:
+            frappe.log_error(
+                title="Interactive List Message Error",
+                message=f"Failed to send list message: {response_data}"
+            )
+            return {"success": False, "error": response_data}
+
+        message_id = response_data["messages"][0]["id"]
+
+        # Create WhatsApp Message record
+        doc = frappe.new_doc("WhatsApp Message")
+        doc.update({
+            "reference_doctype": crm_lead_doc.doctype if crm_lead_doc else "CRM Lead",
+            "reference_name": crm_lead_doc.name if crm_lead_doc else None,
+            "message_type": "Manual",
+            "message": f"{header_text}\n\n{body_text}" if header_text else body_text,
+            "content_type": "text",
+            "to": whatsapp_id,
+            "message_id": message_id,
+            "status": "Success",
+            "timestamp": get_datetime(),
+            "type": "Outgoing"
+        })
+        doc.insert(ignore_permissions=True)
+
+        return {"success": True, "message_id": message_id}
+
+    except Exception as e:
+        frappe.log_error(
+            title="Interactive List Message Exception",
+            message=f"Exception sending list message: {str(e)}"
+        )
+        return {"success": False, "error": str(e)}
+
+
+def handle_interactive_list_reply(whatsapp_id, customer_name, list_reply_id, list_reply_title, crm_lead_doc=None):
+    """
+    Handle response when staff/masseur selects an option from an interactive list message.
+
+    This function is called when an incoming message of type 'interactive' with 'list_reply' is received.
+
+    Args:
+        whatsapp_id: The WhatsApp ID of the staff member who responded
+        customer_name: Name of the staff member
+        list_reply_id: The ID of the selected row (set when creating the list)
+        list_reply_title: The title of the selected row
+        crm_lead_doc: Optional CRM Lead document for the staff member
+
+    Returns:
+        bool: True if handled successfully, False otherwise
+    """
+    try:
+        if not crm_lead_doc:
+            crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+
+        print(f"Staff {customer_name} selected list option: {list_reply_id} - {list_reply_title}")
+
+        # Handle different list reply IDs based on your business logic
+        # Example patterns for staff/masseur actions:
+
+        if list_reply_id.startswith("clock_"):
+            # Handle clock in/out options
+            action = list_reply_id.replace("clock_", "")
+            if action == "in":
+                set_clock_log_type(crm_lead_doc, "IN")
+                enqueue(
+                    method=send_location_request_message_with_delay,
+                    crm_lead_doc=crm_lead_doc,
+                    whatsapp_id=whatsapp_id,
+                    text="Please share your location to complete clock in.",
+                    queue="short",
+                    is_async=True
+                )
+            elif action == "out":
+                set_clock_log_type(crm_lead_doc, "OUT")
+                enqueue(
+                    method=send_location_request_message_with_delay,
+                    crm_lead_doc=crm_lead_doc,
+                    whatsapp_id=whatsapp_id,
+                    text="Please share your location to complete clock out.",
+                    queue="short",
+                    is_async=True
+                )
+            return True
+
+        elif list_reply_id.startswith("leave_"):
+            # Handle leave request options
+            leave_type = list_reply_id.replace("leave_", "")
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=f"You selected: {list_reply_title}\n\nPlease provide the date(s) for your {leave_type} leave request.",
+                queue="short",
+                is_async=True
+            )
+            return True
+
+        elif list_reply_id.startswith("schedule_"):
+            # Handle schedule viewing options
+            schedule_option = list_reply_id.replace("schedule_", "")
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=f"Fetching your {schedule_option} schedule...",
+                queue="short",
+                is_async=True
+            )
+            return True
+
+        else:
+            # Generic handler for other list replies
+            # Log for debugging/tracking
+            frappe.get_doc({
+                "doctype": "WhatsApp Notification Log",
+                "template": "List Reply",
+                "meta_data": json.dumps({
+                    "whatsapp_id": whatsapp_id,
+                    "customer_name": customer_name,
+                    "list_reply_id": list_reply_id,
+                    "list_reply_title": list_reply_title,
+                    "crm_lead": crm_lead_doc.name if crm_lead_doc else None
+                })
+            }).insert(ignore_permissions=True)
+
+            return True
+
+    except Exception as e:
+        frappe.log_error(
+            title="Interactive List Reply Handler Error",
+            message=f"Error handling list reply: {str(e)}\nReply ID: {list_reply_id}\nWhatsApp ID: {whatsapp_id}"
+        )
+        return False
+
 
 def get_crm_lead(whatsapp_id, customer_name):
     reference_name, doctype = get_lead_or_deal_from_number(whatsapp_id)
