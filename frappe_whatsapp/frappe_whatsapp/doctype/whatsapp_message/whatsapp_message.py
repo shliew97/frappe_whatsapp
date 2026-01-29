@@ -1412,7 +1412,8 @@ def handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
 
 def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
     if "I would like to Login with this WhatsApp number" in message:
-        message = message.split("OTP:")[1].strip()
+        parts = message.split("OTP:", 1)
+        message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
 
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
@@ -1445,7 +1446,8 @@ def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_registration(crm_lead_doc, whatsapp_id, message):
-    message = message.split("OTP:")[1].strip()
+    parts = message.split("OTP:", 1)
+    message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
 
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
@@ -1472,7 +1474,8 @@ def handle_registration(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_reset_password(crm_lead_doc, whatsapp_id, message):
-    message = message.split("OTP:")[1].strip()
+    parts = message.split("OTP:", 1)
+    message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
 
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
