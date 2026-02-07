@@ -150,6 +150,8 @@ def post(form_dict):
 						file_data = media_response.content
 						file_name = f"{frappe.generate_hash(length=10)}.{file_extension}"
 
+						frappe.flags.file_data = file_data
+
 						message_doc = frappe.get_doc({
 							"doctype": "WhatsApp Message",
 							"type": "Incoming",

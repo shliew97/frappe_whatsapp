@@ -12,6 +12,7 @@ import hashlib
 from crm.api.whatsapp import get_lead_or_deal_from_number
 import requests
 from frappe.utils.background_jobs import enqueue
+from frappe.core.doctype.file.utils import find_file_by_url
 import re
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import (
     get_rag_chain,
@@ -19,7 +20,6 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain i
     has_booking_intent,
     detect_booking_intent_from_recent_context,
     extract_booking_details,
-    handle_booking_api,
     get_pending_booking_data,
     save_pending_booking_data,
     clear_pending_booking_data,
@@ -27,6 +27,14 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain i
     generate_smart_missing_fields_prompt,
     validate_booking_timeslot,
     validate_and_correct_outlet_info
+)
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.handle_api_calls import (
+    handle_booking_api,
+    handle_booking_api_mock,
+    handle_update_booking_api_mock,
+    handle_cancel_booking_api_mock,
+    handle_register_staff_face_api,
+    handle_leave_application_api
 )
 
 def is_confirmation_message(message, context=None):
@@ -939,6 +947,193 @@ def set_clock_log_type(crm_lead_doc, log_type):
         frappe.log_error("Clock Log Type Cache Error", str(e))
 
 
+def get_face_registration_mode(crm_lead_doc):
+    """Check if user is in face registration mode."""
+    try:
+        cache_key = f"face_registration_mode_{crm_lead_doc.name}"
+        return frappe.cache().get_value(cache_key) or False
+    except Exception:
+        return False
+
+
+def set_face_registration_mode(crm_lead_doc, enabled=True):
+    """Set face registration mode in cache (expires in 10 minutes)."""
+    try:
+        cache_key = f"face_registration_mode_{crm_lead_doc.name}"
+        if enabled:
+            frappe.cache().set_value(cache_key, True, expires_in_sec=600)
+        else:
+            frappe.cache().delete_value(cache_key)
+    except Exception as e:
+        frappe.log_error("Face Registration Mode Cache Error", str(e))
+
+
+def get_leave_application_mode(crm_lead_doc):
+    """Check if user is in leave application mode and get leave type."""
+    try:
+        cache_key = f"leave_application_mode_{crm_lead_doc.name}"
+        return frappe.cache().get_value(cache_key) or None
+    except Exception:
+        return None
+
+
+def set_leave_application_mode(crm_lead_doc, leave_type=None):
+    """Set leave application mode in cache with leave type (expires in 10 minutes)."""
+    try:
+        cache_key = f"leave_application_mode_{crm_lead_doc.name}"
+        if leave_type:
+            frappe.cache().set_value(cache_key, leave_type, expires_in_sec=600)
+        else:
+            frappe.cache().delete_value(cache_key)
+    except Exception as e:
+        frappe.log_error("Leave Application Mode Cache Error", str(e))
+
+
+def extract_leave_date_and_reason(message):
+    """
+    Extract leave date and reason from user's message using regex fallback and LLM.
+
+    Args:
+        message: User's message containing date and reason
+
+    Returns:
+        dict: {"date": "YYYY-MM-DD", "reason": "extracted reason"}
+    """
+    import re
+    from datetime import datetime
+
+    def parse_date_with_regex(text):
+        """Try to extract date using regex patterns."""
+        # Month name mapping
+        month_map = {
+            'jan': 1, 'january': 1,
+            'feb': 2, 'february': 2,
+            'mar': 3, 'march': 3,
+            'apr': 4, 'april': 4,
+            'may': 5,
+            'jun': 6, 'june': 6,
+            'jul': 7, 'july': 7,
+            'aug': 8, 'august': 8,
+            'sep': 9, 'sept': 9, 'september': 9,
+            'oct': 10, 'october': 10,
+            'nov': 11, 'november': 11,
+            'dec': 12, 'december': 12
+        }
+
+        text_lower = text.lower()
+
+        # Pattern: "16 Feb 2026" or "16 February 2026"
+        pattern1 = r'(\d{1,2})\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\s*(\d{4})'
+        match = re.search(pattern1, text_lower)
+        if match:
+            day = int(match.group(1))
+            month = month_map.get(match.group(2))
+            year = int(match.group(3))
+            if month and 1 <= day <= 31:
+                return f"{year}-{month:02d}-{day:02d}"
+
+        # Pattern: "16/02/2026" or "16-02-2026"
+        pattern2 = r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})'
+        match = re.search(pattern2, text)
+        if match:
+            day = int(match.group(1))
+            month = int(match.group(2))
+            year = int(match.group(3))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"{year}-{month:02d}-{day:02d}"
+
+        # Pattern: "2026-02-16" (ISO format)
+        pattern3 = r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})'
+        match = re.search(pattern3, text)
+        if match:
+            year = int(match.group(1))
+            month = int(match.group(2))
+            day = int(match.group(3))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"{year}-{month:02d}-{day:02d}"
+
+        # Handle "tomorrow"
+        if 'tomorrow' in text_lower:
+            tomorrow = frappe.utils.add_days(frappe.utils.now_datetime(), 1)
+            return tomorrow.strftime("%Y-%m-%d")
+
+        return None
+
+    def extract_reason(text, date_str):
+        """Extract reason by removing the date part."""
+        # Remove common date patterns from text
+        reason = text
+        # Remove patterns like "16 Feb 2026"
+        reason = re.sub(r'\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\s*\d{4}', '', reason, flags=re.IGNORECASE)
+        # Remove patterns like "16/02/2026"
+        reason = re.sub(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', '', reason)
+        # Remove "tomorrow"
+        reason = re.sub(r'\btomorrow\b', '', reason, flags=re.IGNORECASE)
+        # Clean up separators and whitespace
+        reason = re.sub(r'^[\s,\-:]+|[\s,\-:]+$', '', reason)
+        reason = reason.strip()
+        return reason if reason else "Personal leave"
+
+    # First try regex extraction (fast and reliable for common formats)
+    extracted_date = parse_date_with_regex(message)
+    if extracted_date:
+        reason = extract_reason(message, extracted_date)
+        frappe.log_error("Leave Date Extraction (Regex)", f"Date: {extracted_date}, Reason: {reason}, Message: {message}")
+        return {"date": extracted_date, "reason": reason}
+
+    # Fallback to LLM for complex formats
+    try:
+        from langchain_openai import ChatOpenAI
+        from langchain_core.prompts import ChatPromptTemplate
+
+        # Get current date for context
+        current_date = frappe.utils.now_datetime().strftime("%Y-%m-%d")
+
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0,
+            api_key=frappe.conf.get("openai_api_key")
+        )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", f"""You are a date and reason extractor. Today's date is {current_date}.
+
+Extract the leave date and reason from the user's message.
+
+Rules:
+1. Convert any date format to YYYY-MM-DD format
+2. If only a day is mentioned (e.g., "15th"), assume the current or next month
+3. If a date range is mentioned, extract the START date
+4. Extract the reason - everything that explains WHY they need leave
+5. If no clear reason is given, use "Personal leave" as default
+
+Respond ONLY in this exact JSON format:
+{{"date": "YYYY-MM-DD", "reason": "the reason"}}
+
+Examples:
+- "15 Feb 2025, family event" → {{"date": "2025-02-15", "reason": "family event"}}
+- "tomorrow, not feeling well" → {{"date": "<tomorrow's date>", "reason": "not feeling well"}}
+- "10-12 March for wedding" → {{"date": "2025-03-10", "reason": "for wedding"}}"""),
+            ("human", "{message}")
+        ])
+
+        chain = prompt | llm
+        response = chain.invoke({"message": message})
+
+        # Parse the JSON response
+        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+            frappe.log_error("Leave Date Extraction (LLM)", f"Result: {result}, Message: {message}")
+            return result
+
+        return {"date": None, "reason": message}
+
+    except Exception as e:
+        frappe.log_error("Extract Leave Date Error", f"Error: {str(e)}, Message: {message}")
+        return {"date": None, "reason": message}
+
+
 def send_staff_hr_menu(crm_lead_doc, whatsapp_id):
     """
     Send interactive list menu to staff with HR options.
@@ -957,6 +1152,11 @@ def send_staff_hr_menu(crm_lead_doc, whatsapp_id):
         {
             "title": "Attendance",
             "rows": [
+                {
+                    "id": "register_clock_in",
+                    "title": "Register for Clock In",
+                    "description": "Register your device for clock in"
+                },
                 {
                     "id": "clock_in",
                     "title": "Clock In",
@@ -1020,6 +1220,88 @@ def handle_outlet_staff_hr(whatsapp_message, crm_lead_doc):
 
     # Handle "clock in" or "clock out" text messages - send location request
     if content_type == "text":
+        # Check if user is in leave application mode
+        leave_type = get_leave_application_mode(crm_lead_doc)
+        if leave_type:
+            # User is providing date and reason for leave
+            original_message = (whatsapp_message.message or "").strip()
+            leave_type_display = leave_type.replace("_", " ").title()
+
+            # Clear the leave application mode
+            set_leave_application_mode(crm_lead_doc, None)
+
+            # Extract date and reason from the message using LLM
+            extracted_data = extract_leave_date_and_reason(original_message)
+            leave_date = extracted_data.get("date")
+            reason = extracted_data.get("reason", original_message)
+
+            # Log the leave request
+            frappe.log_error(
+                title="Leave Application Request",
+                message=f"Staff: {crm_lead_doc.lead_name or crm_lead_doc.first_name}\n"
+                        f"WhatsApp ID: {whatsapp_id}\n"
+                        f"Leave Type: {leave_type_display}\n"
+                        f"Date: {leave_date}\n"
+                        f"Reason: {reason}\n"
+                        f"Original Message: {original_message}"
+            )
+
+            # Call leave application API
+            if leave_date:
+                try:
+                    api_response = handle_leave_application_api(
+                        whatsapp_id=whatsapp_id,
+                        leave_date=leave_date,
+                        reason=reason
+                    )
+
+                    # Check API response
+                    msg_obj = api_response.get("message", {}) if api_response else {}
+                    success = msg_obj.get("success", False) if isinstance(msg_obj, dict) else False
+                    response_msg = msg_obj.get("message", "") if isinstance(msg_obj, dict) else str(msg_obj)
+
+                    if success:
+                        reply_text = (
+                            f"✅ *Leave Request Submitted*\n\n"
+                            f"*Type:* {leave_type_display} Leave\n"
+                            f"*Date:* {leave_date}\n"
+                            f"*Reason:* {reason}\n\n"
+                            f"Your leave request has been submitted for approval. "
+                            f"You will be notified once it is processed."
+                        )
+                    else:
+                        reply_text = (
+                            f"❌ *Leave Request Failed*\n\n"
+                            f"{response_msg or 'Unable to submit leave request. Please try again.'}"
+                        )
+                except Exception as e:
+                    frappe.log_error("Leave Application Error", str(e))
+                    reply_text = (
+                        f"❌ *Leave Request Failed*\n\n"
+                        f"An error occurred while submitting your leave request. Please try again."
+                    )
+            else:
+                # Could not extract date from message
+                # Generate a sample future date (7 days from now)
+                sample_date = frappe.utils.add_days(frappe.utils.now_datetime(), 7)
+                sample_date_str = sample_date.strftime("%-d %b %Y")
+                reply_text = (
+                    f"❌ *Could not process your request*\n\n"
+                    f"I couldn't identify the date from your message. "
+                    f"Please try again with a clear date format.\n\n"
+                    f"Example: '{sample_date_str}, need to attend family event'"
+                )
+
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text=reply_text,
+                queue="short",
+                is_async=True
+            )
+            return
+
         if "clock in" in message_text:
             # Store the log type for when location is received
             set_clock_log_type(crm_lead_doc, "IN")
@@ -1066,58 +1348,73 @@ def handle_outlet_staff_hr(whatsapp_message, crm_lead_doc):
             return
 
     if content_type == "image":
-        # Frappe stores /files/xxx → convert to absolute URL
-        image_url_domain = frappe.utils.get_url(whatsapp_message.attach)
-        print(f"Received image from outlet staff: {image_url_domain}")
+        # Check if user is in face registration mode
+        if get_face_registration_mode(crm_lead_doc):
+            try:
+                # Wait for file to be fully saved
+                time.sleep(2)
 
-        # If the message has a caption, it’s optional
-        # Combine URL with message if needed (depends on your use case)
-        image_url = image_url_domain + whatsapp_message.message  # you can append caption if needed
-        print(f"Final image URL: {image_url}")
+                # Get the file using file_url from whatsapp_message.attach
+                # file_url = whatsapp_message.attach
+                # file_doc = frappe.get_doc("File", {"file_url": file_url})
+                file_content = frappe.flags.file_data
+                #print("File content: ", file_content)
+                # Use get_content() from the File document
+                # file_content = file_doc.get_content()
 
-        try:
-            # Call API with image URL only
-            clock_details = {
-                "image_url": image_url,
-                "log_type": "IN"
-            }
+                # # Convert to base64
+                # if isinstance(file_content, str):
+                #     file_content = file_content.encode()
+                # selfie_base64 = base64.b64encode(file_content).decode('utf-8')
 
-            api_response = handle_clock_in_api(
-                staff_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                clock_details=clock_details
-            )
-            print("API Response:", api_response)
+                # print(f"Face registration - Got file content, base64 length: {len(selfie_base64)}")
 
-            # ✅ Handle nested message properly
-            msg_obj = api_response.get("message", {})
-            success = msg_obj.get("success", False)
-            response_msg = msg_obj.get("message", "Image received.")
+                # Call face registration API with base64 image
+                api_response = handle_register_staff_face_api(
+                    mobile_no=whatsapp_id,
+                    selfie_image=file_content
+                )
+                print("Face Registration API Response:", api_response)
 
-            reply_msg = f"{'✅' if success else '❌'} {response_msg}"
+                # Clear face registration mode after API call
+                set_face_registration_mode(crm_lead_doc, enabled=False)
 
-            enqueue(
-                method=send_message_with_delay,
-                crm_lead_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                text=reply_msg,
-                queue="short",
-                is_async=True
-            )
+                # Handle API response
+                msg_obj = api_response.get("message", {}) if api_response else {}
+                success = msg_obj.get("success", False)
+                response_msg = msg_obj.get("message", "Face registration processed.")
 
-        except Exception as e:
-            frappe.log_error(title="Clock In Image Error", message=str(e))
-            print("Image failed:", e)
+                reply_msg = f"{'✅' if success else '❌'} {response_msg}"
 
-            enqueue(
-                method=send_message_with_delay,
-                crm_lead_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                text="❌ Failed to process image. Please resend a clear photo.",
-                queue="short",
-                is_async=True
-            )
+                enqueue(
+                    method=send_message_with_delay,
+                    crm_lead_doc=crm_lead_doc,
+                    whatsapp_id=whatsapp_id,
+                    text=reply_msg,
+                    queue="short",
+                    is_async=True
+                )
 
+            except Exception as e:
+                frappe.log_error(title="Face Registration Error", message=str(e))
+                print("Face registration failed:", e)
+
+                # Clear face registration mode on error
+                set_face_registration_mode(crm_lead_doc, enabled=False)
+
+                enqueue(
+                    method=send_message_with_delay,
+                    crm_lead_doc=crm_lead_doc,
+                    whatsapp_id=whatsapp_id,
+                    text="❌ Failed to register face. Please try again with a clear selfie photo.",
+                    queue="short",
+                    is_async=True
+                )
+
+            return
+
+        # User is not in face registration mode, show menu instead
+        send_staff_hr_menu(crm_lead_doc, whatsapp_id)
         return
 
         
@@ -1254,7 +1551,7 @@ def handle_text_message_ai(message, whatsapp_id, customer_name, crm_lead_doc=Non
                 return
 
         # PRIORITY 1: Check for CANCEL intent (highest priority, immediate action)
-        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import has_cancel_intent, handle_cancel_booking_api_mock
+        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import has_cancel_intent
         user_wants_to_cancel = has_cancel_intent(message)
 
         if user_wants_to_cancel and pending_data:
@@ -1290,7 +1587,7 @@ If you'd like to make a new booking in the future, just let us know! 💚"""
                 return
 
         # PRIORITY 2: Check for UPDATE intent using LLM (before new booking flow)
-        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import detect_update_intent_with_llm, handle_update_booking_api_mock
+        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import detect_update_intent_with_llm
 
         # Only check for update if there's existing confirmed booking data
         # Check if booking was previously confirmed (not just pending)
@@ -1756,7 +2053,6 @@ Is everything correct? Please reply:
 
                             try:
                                 # Call the MOCK booking API (for POC/simulation)
-                                from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import handle_booking_api_mock
                                 api_response = handle_booking_api_mock(crm_lead_doc, whatsapp_id, booking_data)
                                 print(f"Mock Booking API response: {json.dumps(api_response, default=str)}", "WhatsApp Booking Debug")
 
@@ -2708,7 +3004,20 @@ def handle_interactive_list_reply(whatsapp_id, customer_name, list_reply_id, lis
         # Handle different list reply IDs based on your business logic
         # Example patterns for staff/masseur actions:
 
-        if list_reply_id.startswith("clock_"):
+        if list_reply_id == "register_clock_in":
+            # Handle face registration for clock in
+            set_face_registration_mode(crm_lead_doc, enabled=True)
+            enqueue(
+                method=send_message_with_delay,
+                crm_lead_doc=crm_lead_doc,
+                whatsapp_id=whatsapp_id,
+                text="📸 *Face Registration*\n\nPlease take a clear selfie photo of your face and send it here to register for clock in.\n\nMake sure:\n• Your face is clearly visible\n• Good lighting\n• No sunglasses or face coverings",
+                queue="short",
+                is_async=True
+            )
+            return True
+
+        elif list_reply_id.startswith("clock_"):
             # Handle clock in/out options
             action = list_reply_id.replace("clock_", "")
             if action == "in":
@@ -2736,11 +3045,32 @@ def handle_interactive_list_reply(whatsapp_id, customer_name, list_reply_id, lis
         elif list_reply_id.startswith("leave_"):
             # Handle leave request options
             leave_type = list_reply_id.replace("leave_", "")
+            # Set leave application mode with the leave type
+            set_leave_application_mode(crm_lead_doc, leave_type)
+
+            leave_type_display = leave_type.replace("_", " ").title()
+
+            # Generate sample future dates for examples
+            sample_date_1 = frappe.utils.add_days(frappe.utils.now_datetime(), 7)
+            sample_date_2 = frappe.utils.add_days(frappe.utils.now_datetime(), 10)
+            sample_date_1_str = sample_date_1.strftime("%-d %b %Y")
+            sample_date_2_str = f"{sample_date_1.strftime('%-d')}-{sample_date_2.strftime('%-d %b %Y')}"
+
+            leave_prompt = (
+                f"📅 *{leave_type_display} Leave Application*\n\n"
+                f"Please provide the date and reason for your leave.\n\n"
+                f"*Examples:*\n"
+                f"• _{sample_date_1_str}, family wedding_\n"
+                f"• _{sample_date_2_str}, going for vacation_\n"
+                f"• _tomorrow, not feeling well_\n\n"
+                f"Reply with your date and reason in a single message."
+            )
+
             enqueue(
                 method=send_message_with_delay,
                 crm_lead_doc=crm_lead_doc,
                 whatsapp_id=whatsapp_id,
-                text=f"You selected: {list_reply_title}\n\nPlease provide the date(s) for your {leave_type} leave request.",
+                text=leave_prompt,
                 queue="short",
                 is_async=True
             )
