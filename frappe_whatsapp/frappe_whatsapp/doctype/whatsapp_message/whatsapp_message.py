@@ -1352,6 +1352,7 @@ def create_crm_tagging_assignment(crm_lead, tagging, status=None):
         })
 
 def handle_membership_rate_request(crm_lead_doc, whatsapp_id):
+    frappe.flags.skip_lead_status_update = True
     create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
@@ -1379,6 +1380,7 @@ def handle_membership_rate_request(crm_lead_doc, whatsapp_id):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
     create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     free_member_subscription_id = message.split(":")[-1].strip().lower()
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
@@ -1414,6 +1416,7 @@ def handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
     create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     if "I would like to Login with this WhatsApp number" in message:
         parts = message.split("OTP:", 1)
@@ -1450,6 +1453,7 @@ def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_registration(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
     create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     parts = message.split("OTP:", 1)
     message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
@@ -1479,6 +1483,7 @@ def handle_registration(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_reset_password(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
     create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     parts = message.split("OTP:", 1)
     message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
