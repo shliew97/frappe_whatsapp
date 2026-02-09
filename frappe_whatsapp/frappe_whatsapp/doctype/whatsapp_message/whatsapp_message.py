@@ -1156,16 +1156,6 @@ def send_staff_hr_menu(crm_lead_doc, whatsapp_id):
                     "id": "register_clock_in",
                     "title": "Register for Clock In",
                     "description": "Register your device for clock in"
-                },
-                {
-                    "id": "clock_in",
-                    "title": "Clock In",
-                    "description": "Record your arrival at work"
-                },
-                {
-                    "id": "clock_out",
-                    "title": "Clock Out",
-                    "description": "Record your departure from work"
                 }
             ]
         },
@@ -1301,47 +1291,7 @@ def handle_outlet_staff_hr(whatsapp_message, crm_lead_doc):
                 is_async=True
             )
             return
-
-        if "clock in" in message_text:
-            # Store the log type for when location is received
-            set_clock_log_type(crm_lead_doc, "IN")
-
-            location_request_text = (
-                "📍 *Clock In Request*\n\n"
-                "Please share your current location to complete your clock in.\n\n"
-                "Tap the button below to send your location."
-            )
-
-            enqueue(
-                method=send_location_request_message_with_delay,
-                crm_lead_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                text=location_request_text,
-                queue="short",
-                is_async=True
-            )
-            return
-
-        elif "clock out" in message_text:
-            # Store the log type for when location is received
-            set_clock_log_type(crm_lead_doc, "OUT")
-
-            location_request_text = (
-                "📍 *Clock Out Request*\n\n"
-                "Please share your current location to complete your clock out.\n\n"
-                "Tap the button below to send your location."
-            )
-
-            enqueue(
-                method=send_location_request_message_with_delay,
-                crm_lead_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                text=location_request_text,
-                queue="short",
-                is_async=True
-            )
-            return
-
+        
         else:
             # Send interactive list menu for any other text message
             send_staff_hr_menu(crm_lead_doc, whatsapp_id)
@@ -1415,70 +1365,6 @@ def handle_outlet_staff_hr(whatsapp_message, crm_lead_doc):
 
         # User is not in face registration mode, show menu instead
         send_staff_hr_menu(crm_lead_doc, whatsapp_id)
-        return
-
-        
-    if content_type == "location":
-        try:
-            location_data = (
-                json.loads(whatsapp_message.message)
-                if whatsapp_message.message
-                else {}
-            )
-
-            latitude = location_data.get("latitude")
-            print(latitude)
-            longitude = location_data.get("longitude")
-            print(longitude)
-
-            if not latitude or not longitude:
-                raise ValueError("Missing latitude or longitude")
-
-            # Get the log type from cache (set when user typed "clock in" or "clock out")
-            log_type = get_clock_log_type(crm_lead_doc)
-
-            # Call API with location only
-            clock_details = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "log_type": log_type
-            }
-
-            api_response = handle_clock_in_api(
-                staff_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                clock_details=clock_details
-            )
-            print("Response: ")
-            print(api_response)
-            msg_obj = api_response.get("message", {})
-            print(msg_obj)
-
-            success = msg_obj.get("success", False)
-            response_msg = msg_obj.get("message", "Location received.")
-
-            reply_msg = f"{'Success' if success else 'Failed'}: {response_msg}"
-
-            enqueue(
-                method=send_message_with_delay,
-                crm_lead_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                text=reply_msg,
-                queue="short",
-                is_async=True
-            )
-
-        except Exception as e:
-            frappe.log_error(title="Clock In Location Error", message=str(e))
-            print("Locations: ", e)
-            enqueue(
-                method=send_message_with_delay,
-                crm_lead_doc=crm_lead_doc,
-                whatsapp_id=whatsapp_id,
-                text="Failed to process location. Please try again.",
-                queue="short",
-                is_async=True
-            )
         return
 
     # Handle list_reply (staff responded to an interactive list message)
