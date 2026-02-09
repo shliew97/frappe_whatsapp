@@ -611,6 +611,7 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     integration_keyword_settings = frappe.get_single("Integration Keyword Settings")
 
     if integration_keyword_settings.register_as_member_keyword and integration_keyword_settings.register_as_member_keyword in message and not crm_lead_doc.agree_pdpa:
+        create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
         send_interactive_message(crm_lead_doc, whatsapp_id, PDPA_MESSAGE, PDPA_BUTTON)
 
     if integration_keyword_settings.request_membership_rate_keyword and integration_keyword_settings.request_membership_rate_keyword in message:
@@ -748,7 +749,6 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
 
     if interactive_id == "agree-pdpa":
         frappe.flags.agree_pdpa = True
-        create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=PDPA_ACCEPTED_REPLY, queue="short", is_async=True)
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
