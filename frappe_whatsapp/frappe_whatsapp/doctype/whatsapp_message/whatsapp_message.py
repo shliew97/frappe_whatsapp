@@ -748,6 +748,7 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
 
     if interactive_id == "agree-pdpa":
         frappe.flags.agree_pdpa = True
+        create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=PDPA_ACCEPTED_REPLY, queue="short", is_async=True)
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
@@ -1351,6 +1352,7 @@ def create_crm_tagging_assignment(crm_lead, tagging, status=None):
         })
 
 def handle_membership_rate_request(crm_lead_doc, whatsapp_id):
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
@@ -1377,6 +1379,7 @@ def handle_membership_rate_request(crm_lead_doc, whatsapp_id):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     free_member_subscription_id = message.split(":")[-1].strip().lower()
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
@@ -1411,6 +1414,7 @@ def handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     if "I would like to Login with this WhatsApp number" in message:
         parts = message.split("OTP:", 1)
         message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
@@ -1446,6 +1450,7 @@ def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_registration(crm_lead_doc, whatsapp_id, message):
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     parts = message.split("OTP:", 1)
     message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
 
@@ -1474,6 +1479,7 @@ def handle_registration(crm_lead_doc, whatsapp_id, message):
             frappe.throw(f"An error occurred: {e}")
 
 def handle_reset_password(crm_lead_doc, whatsapp_id, message):
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     parts = message.split("OTP:", 1)
     message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
 
