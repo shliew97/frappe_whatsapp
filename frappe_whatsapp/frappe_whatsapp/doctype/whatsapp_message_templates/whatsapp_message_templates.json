@@ -74,7 +74,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2025-08-13 17:13:09.475793",
+ "modified": "2026-02-14 15:12:48.267987",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Message Templates",
@@ -94,6 +94,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "search_fields": "message",
  "sort_field": "modified",
  "sort_order": "DESC",

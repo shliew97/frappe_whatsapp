@@ -318,4 +318,8 @@ def should_debounce_message(message_doc):
             )
             return (True, True)
 
+    # Don't debounce button replies - they need immediate handling (e.g. Proceed button for pending messages)
+    if message_doc.content_type == "button":
+        return (False, False)
+
     return (True, False)  # Default debounce for non-text

@@ -435,7 +435,11 @@ class WhatsAppMessage(Document):
             print("Result: ")
             print(should_debounce)
             print(is_incomplete)
-            if crm_lead_doc.is_outlet_staff:
+            # Handle button replies first - before any other routing
+            # This ensures template button clicks (e.g. "Proceed" for pending messages) are always processed
+            if is_button_reply:
+                handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
+            elif crm_lead_doc.is_outlet_staff:
                 print("Outlet staff handling HR Flow")
                 handle_outlet_staff_hr(self, crm_lead_doc)
             elif should_debounce:
@@ -2411,6 +2415,20 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
     if reply_to_messages and reply_to_messages[0].whatsapp_message_templates and not reply_to_messages[0].replied:
         frappe.db.set_value("WhatsApp Message", reply_to_messages[0].name, "replied", 1)
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", reply_to_messages[0].whatsapp_message_templates)
+
+        # Special handling for pending notification template
+        if whatsapp_message_template_doc.is_pending_notification_template:
+            if not crm_lead_doc:
+                crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
+            enqueue(
+                method=send_pending_messages_for_lead,
+                crm_lead_name=crm_lead_doc.name,
+                whatsapp_id=whatsapp_id,
+                queue="short",
+                is_async=True
+            )
+            return
+
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
             if message == whatsapp_message_template_button.button_label:
                 if not crm_lead_doc:
@@ -2430,6 +2448,65 @@ def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_
                 if whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked:
                     enqueue(method=send_interaction_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, whatsapp_interaction_message_template=whatsapp_message_template_button.reply_whatsapp_interaction_if_button_clicked, queue="short", is_async=True)
                 break
+
+def send_pending_messages_for_lead(crm_lead_name, whatsapp_id):
+    """Send all pending WhatsApp messages for a CRM Lead in creation order (background job)."""
+    pending_messages = frappe.db.get_all(
+        "Pending WhatsApp Message",
+        filters={
+            "status": "Pending",
+            "reference_doctype": "CRM Lead",
+            "reference_name": crm_lead_name
+        },
+        fields=["name", "message", "content_type", "attach", "use_template", "template",
+                "template_parameters", "template_header_parameters"],
+        order_by="creation asc"
+    )
+
+    if not pending_messages:
+        return
+
+    crm_lead_doc = frappe.get_doc("CRM Lead", crm_lead_name)
+
+    for pending in pending_messages:
+        try:
+            if pending.use_template and pending.template:
+                whatsapp_msg = frappe.new_doc("WhatsApp Message")
+                whatsapp_msg.type = "Outgoing"
+                whatsapp_msg.to = whatsapp_id
+                whatsapp_msg.message_type = "Template"
+                whatsapp_msg.content_type = pending.content_type or "text"
+                whatsapp_msg.message = pending.message
+                whatsapp_msg.use_template = 1
+                whatsapp_msg.template = pending.template
+                whatsapp_msg.template_parameters = pending.template_parameters
+                whatsapp_msg.template_header_parameters = pending.template_header_parameters
+                whatsapp_msg.reference_doctype = "CRM Lead"
+                whatsapp_msg.reference_name = crm_lead_name
+                whatsapp_msg.insert(ignore_permissions=True)
+            else:
+                if pending.content_type in ("image", "video", "document") and pending.attach:
+                    whatsapp_msg = frappe.new_doc("WhatsApp Message")
+                    whatsapp_msg.type = "Outgoing"
+                    whatsapp_msg.to = whatsapp_id
+                    whatsapp_msg.message_type = "Manual"
+                    whatsapp_msg.content_type = pending.content_type
+                    whatsapp_msg.message = pending.message
+                    whatsapp_msg.attach = pending.attach
+                    whatsapp_msg.reference_doctype = "CRM Lead"
+                    whatsapp_msg.reference_name = crm_lead_name
+                    whatsapp_msg.insert(ignore_permissions=True)
+                else:
+                    send_message(crm_lead_doc, whatsapp_id, pending.message)
+
+            frappe.db.set_value("Pending WhatsApp Message", pending.name, "status", "Completed", update_modified=False)
+            frappe.db.commit()
+            time.sleep(2)
+        except Exception as e:
+            frappe.log_error(title="Send Pending WhatsApp Message Error", message=f"Pending message {pending.name}: {str(e)}")
+
+    frappe.db.set_value("CRM Lead", crm_lead_name, "notified_for_pending_message", 0, update_modified=False)
+    frappe.db.commit()
 
 def send_message_with_delay(crm_lead_doc, whatsapp_id, text):
     time.sleep(2)

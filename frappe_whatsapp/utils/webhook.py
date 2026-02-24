@@ -6,7 +6,7 @@ import time
 from werkzeug.wrappers import Response
 import frappe.utils
 from frappe.utils.background_jobs import enqueue
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 @frappe.whitelist(allow_guest=True)
@@ -56,6 +56,8 @@ def post(form_dict):
 
 	if messages:
 		for message in messages:
+			if message['from'] not in ["60165373622", "601136269063", "60178699823", "601116130615", "60166127386", "60124727268", "60173491791"]:
+				continue
 			message_type = message['type']
 			is_reply = True if message.get('context') and not message.get('context').get('forwarded') else False
 			is_forwarded = True if message.get('context') and message.get('context').get('forwarded') else False
@@ -257,6 +259,28 @@ def update_message_status(data):
 	if name:
 		doc = frappe.get_doc("WhatsApp Message", name)
 		if status == "failed":
+			if not doc.get("whatsapp_message_templates"):
+				fields_to_copy = [
+					"label", "type", "to", "from", "from_name", "timestamp",
+					"use_template", "template", "template_parameters",
+					"template_header_parameters", "message", "message_type",
+					"message_id", "conversation_id", "interactive_id",
+					"content_type", "attach", "whatsapp_message_templates",
+					"replied", "is_forwarded", "is_reply", "reply_to_message_id",
+					"reference_doctype", "reference_name"
+				]
+				pending_data = {"doctype": "Pending WhatsApp Message"}
+				for field in fields_to_copy:
+					pending_data[field] = doc.get(field)
+				pending_data["expires_at"] = frappe.utils.now_datetime() + timedelta(days=2)
+				frappe.get_doc(pending_data).insert(ignore_permissions=True)
+			frappe.publish_realtime(
+				"whatsapp_message",
+				{
+					"reference_doctype": doc.reference_doctype,
+					"reference_name": doc.reference_name,
+				},
+			)
 			doc.flags.ignore_permissions = True
 			doc.delete()
 		else:
