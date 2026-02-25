@@ -285,58 +285,6 @@ If intent is "update_fields", field_updates should contain the extracted updates
             'field_updates': {}
         }
 
-PAYMENT_STATUS_MAPPING = {
-    "00": "Completed",
-    "11": "Failed",
-    "22": "Pending"
-}
-
-TERMS_AND_CONDITION_1 = "✏️ Please acknowledge with the terms and condition below before making a purchase ✏️\n\n📌 Treatment are redeemable at ALL HL outlets, except HealthLand Malacca, Sunway Velocity 2, Puchong Jaya, Premium HealthLand and Royals HealthLand.\n📌 Any voucher sold is strictly not cancellable or refundable.\n📌 Any add-ons other than the services listed herein (including any products, i.e. Balm, Aroma Oil, Herbal Patch, Steamy Eyemask) are payable by the customer.\n📌 This package is redeemable on weekday and weekend, including Public Holiday."
-TERMS_AND_CONDITION_2 = "📌 Package A is valid for 270 days from the date of purchase and Package B is valid for 365 days from the date of purchase.\n📌 No extension request will be granted.\n📌 Booking in advance is required through Booking Center at +6019-3199126 or +60199002633 (WhatsApp message only).\n📌 HealthLand reserves the right to change, amend, add, or delete any of the Terms and Conditions without prior notice, and the customers shall be bound by such changes. In the event of any disputes, HealthLand reserves the right to take any action necessary to resolve the dispute, and such action taken by HealthLand shall be binding, final, and conclusive."
-TERMS_AND_CONDITION_BUTTON = [
-    {
-        "type": "reply",
-        "reply": {
-            "id": "accept-tnc",
-            "title": "Accept T&C" 
-        }
-    }
-]
-
-CHOOSE_PRODUCT_MESSAGE = "Please click the button below to choose your voucher! 😊"
-CHOOSE_PRODUCT_BUTTON = [
-    {
-        "type": "reply",
-        "reply": {
-            "id": "voucher-book-a",
-            "title": "Voucher Book A" 
-        }
-    },
-    {
-        "type": "reply",
-        "reply": {
-            "id": "voucher-book-b",
-            "title": "Voucher Book B"
-        }
-    }
-]
-
-MAKE_PAYMENT_MESSAGE = "Tap the button below to make payment."
-
-CHOOSE_VOUCHER_TEXT = "Please click the button below to select a Voucher"
-
-COMPLETED_BOOKING_MESSAGE = "🎉 Thank you for your purchase! Your transaction has been successfully completed. ✨\n\n🌟 How to Redeem ? 🌟\n\n1️⃣ Send a WhatsApp message to 019-626 6399 and let us know how many vouchers you'd like to redeem. 📲\n2️⃣ Our system will guide you steps through the process. 🛠️\n3️⃣ Don't worry, the process is safe and secure! 🔒😊"
-
-REDEEM_VOUCHER_CONFIRMATION_MESSAGE = """You're about to redeem {0} vouchers! 🎉\n\nPlease reply "Yes" if everything looks good. 👍\nIf you'd like to change the number, just reply "No" and we'll update it! ✨"""
-NO_VOUCHER_MESSAGE = "Hi there! It looks like we don't have any voucher balance recorded under your phone number.\nIf you believe this is an error, please feel free to reach out to our customer support via Facebook Messenger. 📩\nand show us your redeemption histroy 😊\nFacebook customer support: https://m.me/my.healthland"
-ENTER_VOUCHER_COUNT_MESSAGE = "How many vouchers would you like to redeem today? 😊\nJust enter a number, like 1, 2, and so on! 🎉"
-INVALID_VOUCHER_COUNT_MESSAGE = "Oops! Something went wrong. 😬\nCan you please enter the number in digits? For example, 1, 2, 3, etc."
-INSUFFICIENT_VOUCHER_COUNT_MESSAGE = "Opps you do not have enough vouchers, please key in again in digits.\ne.g. 1, 2, 3, ..."
-REDEEMED_VOUCHER_MESSAGE = "Your code has been successfully redeemed! 🎉\nThank you so much for your visit. We hope to see you again soon! 😊✨"
-FOLLOW_UP_MESSAGE = "Hi Mr./Ms.\nThank you for being such a valued member of our HealthLand family! 🌟 How was your visit today? We hope you had a wonderful experience! 😊"
-
-DO_NOT_UNDERSTAND_MESSAGE = "Opps I cannot understand you."
-
 OUT_OF_WORKING_HOURS_MESSAGE = "Hello! 😊 Thanks for reaching out!\n\n📅 Our working hours: 9 AM - 5 PM (Monday - Friday). While we're currently unavailable, drop us a message, and we'll get back to you ASAP!\n\n💡 Want to check out our latest deals or make a purchase? Click the link below for exciting offers! 🎉👇\n\nhttps://book.healthland.com.my/privatelink/nojokepwp\n\nThank you for your patience & support! 💜"
 OUT_OF_BOOKING_HOURS_MESSAGE = "📢 This is an automated message\n\nHello! 😊 Thanks for reaching out!\n\n📅 Our booking hours: 10 AM - 9 PM. While we're currently unavailable, leave us a message, and we'll get back to you ASAP!\n\n💡 Need to book now? Try our Online Booking System for a fast & hassle-free experience! 🚀\n👉 Book here: https://book.healthland.com.my/booking/selectshop \n\nThank you for your patience & understanding! 💜"
 OUT_OF_BOOKING_HOURS_FOLLOW_UP_MESSAGE = "🌞 Good morning!\nThank you for reaching out to HealthLand 💜\n\nOur WhatsApp is for package/voucher redemption bookings only 💆‍♀️💆‍♂️\nFor walk-in or non-package customers, we recommend booking online to enjoy:\n✅ Enjoy better rates compared to walk-in\n✅ Secure your slot in advance\n👉 https://book.healthland.com.my/booking/selectshop \n\n✨ Have you booked online yet?\nIf not, no worries — just fill in the form below and we'll help you make the booking:\n\n• Name\n• Contact No.\n• Date & Time\n• Outlet\n• No. of Pax\n• Treatment (Foot / Thai / Oil)\n• Duration (60 / 90 / 120 min)\n• Preferred Masseur (Male / Female)\n• Voucher / Package\n\n🕒 Filling in the form helps us secure your slot faster and avoid delays.\nWe look forward to serving you soon! 💚"
@@ -361,6 +309,8 @@ PDPA_BUTTON = [
     }
 ]
 PDPA_ACCEPTED_REPLY = "You're now registered as a SOMA Wellness Member 🌿"
+
+CLOCK_IN_ENDPOINT = "/api/method/healthland_pos.api.clock_in"
 
 class WhatsAppMessage(Document):
     """Send whats app messages."""
@@ -412,19 +362,6 @@ class WhatsAppMessage(Document):
     def after_insert(self):
         crm_lead_doc = frappe.get_doc("CRM Lead", self.reference_name)
         if self.type == "Incoming" and self.reference_doctype == "CRM Lead" and self.reference_name:
-            # whatsapp_message_reply = frappe.new_doc("WhatsApp Message")
-            # whatsapp_message_reply.type = "Outgoing"
-            # whatsapp_message_reply.to = self.get("from")
-            # whatsapp_message_reply.message_type = "Manual"
-            # whatsapp_message_reply.content_type = "text"
-            # whatsapp_message_reply.reference_doctype = self.reference_doctype
-            # whatsapp_message_reply.reference_name = self.reference_name
-            # if frappe.db.count('WhatsApp Message') % 100 == 0:
-            #     whatsapp_message_reply.message = "Congratulations 🎉 you have won the grand prize !!!"
-            # else:
-            #     random_replies = frappe.db.get_all("Random Reply", pluck="message")
-            #     whatsapp_message_reply.message = random.choice(random_replies)
-            # whatsapp_message_reply.insert(ignore_permissions=True)
             is_button_reply = self.content_type == "button" and self.is_reply and self.reply_to_message_id
             # Check if message should be debounced
             from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.message_debouncer import should_debounce_message, queue_message
@@ -460,8 +397,6 @@ class WhatsAppMessage(Document):
                     handle_interactive_message(self.interactive_id, self.get("from"), self.get("from_name"), crm_lead_doc)
                 elif self.content_type == "list_reply":
                     handle_interactive_list_reply(self.get("from"), self.get("from_name"), self.interactive_id, self.message, crm_lead_doc)
-                elif is_button_reply:
-                    handle_template_message_reply(self.get("from"), self.get("from_name"), self.get("message"), self.reply_to_message_id, crm_lead_doc)
                 else:
                     if not crm_lead_doc.last_reply_at or crm_lead_doc.last_reply_at < add_to_date(get_datetime(), days=-1) or crm_lead_doc.closed:
                         text_auto_replies = frappe.db.get_all("Text Auto Reply", filters={"disabled": 0, "name": "automated_message"}, fields=["*"])
@@ -532,55 +467,7 @@ class WhatsAppMessage(Document):
             if not published and crm_lead_doc.is_special_attention:
                 frappe.publish_realtime("new_leads", {})
 
-            # master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
-
-            # open_taggings = frappe.db.get_all(
-            #     "CRM Lead Tagging",
-            #     filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
-            #     pluck="tagging"
-            # )
-
-            # open_assignments = frappe.db.get_all(
-            #     "CRM Lead Assignment",
-            #     filters={"crm_lead": crm_lead_doc.name, "whatsapp_message_templates": ["in", master_agent_assigned_templates], "status": ["in", ["New", "Accepted"]]},
-            #     pluck="name"
-            # )
-
-            # if open_assignments:
-            #     frappe.get_doc({
-            #         "doctype": "WhatsApp Message Log",
-            #         "from": crm_lead_doc.mobile_no,
-            #         "message": self.message,
-            #         "tagging": ", ".join(open_taggings),
-            #         "timestamp": self.timestamp,
-            #         "note": "CRM Master Agent",
-            #     }).insert(ignore_permissions=True)
-
         if self.type == "Outgoing" and self.reference_doctype == "CRM Lead" and self.reference_name:
-            # master_agent_assigned_templates = frappe.get_all("User Permission", filters={"user": "crm_master_agent@example.com"}, pluck="for_value")
-
-            # open_taggings = frappe.db.get_all(
-            #     "CRM Lead Tagging",
-            #     filters={"crm_lead": crm_lead_doc.name, "tagging": ["in", ["Unknown", "Promotion"]], "status": "Open"},
-            #     pluck="tagging"
-            # )
-
-            # open_assignments = frappe.db.get_all(
-            #     "CRM Lead Assignment",
-            #     filters={"crm_lead": crm_lead_doc.name, "whatsapp_message_templates": ["in", master_agent_assigned_templates], "status": ["in", ["New", "Accepted"]]},
-            #     pluck="name"
-            # )
-
-            # if open_assignments:
-            #     frappe.get_doc({
-            #         "doctype": "WhatsApp Message Log",
-            #         "from": "CRM Master Agent",
-            #         "message": self.message,
-            #         "tagging": ", ".join(open_taggings),
-            #         "timestamp": self.timestamp,
-            #         "note": "CRM Master Agent",
-            #     }).insert(ignore_permissions=True)
-
             crm_lead_doc_dict = {
                 "last_reply_at": get_datetime(),
                 "last_message_from_me": True,
@@ -715,52 +602,6 @@ def send_template(to, reference_doctype, reference_name, template):
     except Exception as e:
         raise e
 
-def generate_payment_url(crm_lead_doc, whatsapp_product_id):
-    fiuu_settings = frappe.get_single("Fiuu Settings")
-    whatsapp_product_doc = frappe.get_doc("Whatsapp Product", whatsapp_product_id)
-
-    whatsapp_order_doc = frappe.new_doc("Whatsapp Order")
-    whatsapp_order_doc.crm_lead = crm_lead_doc.name
-    whatsapp_order_doc.date = getdate()
-
-    amount = flt(1) * flt(whatsapp_product_doc.price)
-
-    whatsapp_order_doc.append("whatsapp_order_product", {
-        "doctype": "Whatsapp Order Product",
-        "whatsapp_product": whatsapp_product_doc.name,
-        "quantity": flt(1),
-        "amount": amount,
-    })
-
-    whatsapp_order_doc.grand_total = amount
-    whatsapp_order_doc.insert(ignore_permissions=True)
-
-    payment_url = "https://pay.merchant.razer.com/RMS/pay/{0}/".format(fiuu_settings.merchant_id)
-    payment_url += "?amount={0}".format(whatsapp_order_doc.grand_total)
-    payment_url += "&orderid={0}".format(whatsapp_order_doc.name)
-    payment_url += "&bill_desc={0}".format("""Payment for booking {0}""".replace(" ", """%20""").format(whatsapp_order_doc.name))
-    payment_url += "&bill_name={0}".format(crm_lead_doc.first_name.replace(" ", """%20"""))
-    payment_url += "&bill_mobile={0}".format(crm_lead_doc.mobile_no)
-    payment_url += "&bill_email={0}".format("")
-    payment_url += "&country={0}".format("MY")
-    payment_url += "&currency={0}".format("MYR")
-    payment_url += "&guess_checkout={0}".format("1")
-
-    verify_key = fiuu_settings.get_password("verify_key")
-    vcode = calculate_md5(str(whatsapp_order_doc.grand_total) + fiuu_settings.merchant_id + whatsapp_order_doc.name + verify_key)
-    payment_url += "&vcode={0}".format(vcode)
-
-    return payment_url
-
-def calculate_md5(input_string):
-    # Create an MD5 hash object
-    md5_hash = hashlib.md5()
-    # Update the hash object with the bytes-like object of the input string
-    md5_hash.update(input_string.encode('utf-8'))
-    # Get the hexadecimal representation of the hash
-    md5_result = md5_hash.hexdigest()
-    return md5_result
-
 def handle_outlet_frontdesk(message, frontdesk_whatsapp_id, crm_lead_doc):
     front_desk_crm_lead_doc = get_crm_lead(frontdesk_whatsapp_id, frontdesk_whatsapp_id)
     customer_whatsapp_id = normalize_phone_number(message)
@@ -854,9 +695,6 @@ def validate_phone_number(cleaned_number: str) -> bool:
     Validates that the phone number has a valid length (10–15 digits).
     """
     return 10 <= len(cleaned_number) <= 15
-
-CLOCK_IN_ENDPOINT = "/api/method/healthland_pos.api.clock_in"
-
 
 def handle_clock_in_api(staff_doc, whatsapp_id, clock_details):
     """
@@ -2182,48 +2020,6 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     if not crm_lead_doc:
         crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
 
-    # if "I want to purchase" in message:
-    #     crm_lead_doc.action = ""
-    #     crm_lead_doc.save(ignore_permissions=True)
-    #     send_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_1)
-    #     send_interactive_message(crm_lead_doc, whatsapp_id, TERMS_AND_CONDITION_2, TERMS_AND_CONDITION_BUTTON)
-    # elif "Hi, I want to redeem" in message:
-    #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
-
-    #     if not customer_vouchers:
-    #         crm_lead_doc.action = ""
-    #         crm_lead_doc.save(ignore_permissions=True)
-    #         send_message(crm_lead_doc, whatsapp_id, NO_VOUCHER_MESSAGE)
-    #     else:
-    #         crm_lead_doc.action = "Redeem Voucher"
-    #         crm_lead_doc.save(ignore_permissions=True)
-    #         send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
-    # elif not message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
-    #     send_message(crm_lead_doc, whatsapp_id, INVALID_VOUCHER_COUNT_MESSAGE)
-    # elif message.isdigit() and crm_lead_doc.action == "Redeem Voucher":
-    #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
-
-    #     if len(customer_vouchers) >= int(message):
-    #         redeem_voucher_confirmation_button = [
-    #             {
-    #                 "type": "reply",
-    #                 "reply": {
-    #                     "id": "confirm-redeem-{0}".format(message),
-    #                     "title": "Yes" 
-    #                 }
-    #             },
-    #             {
-    #                 "type": "reply",
-    #                 "reply": {
-    #                     "id": "cancel-redeem",
-    #                     "title": "No" 
-    #                 }
-    #             }
-    #         ]
-    #         send_interactive_message(crm_lead_doc, whatsapp_id, REDEEM_VOUCHER_CONFIRMATION_MESSAGE.format(message), redeem_voucher_confirmation_button)
-    #     else:
-    #         send_message(crm_lead_doc, whatsapp_id, INSUFFICIENT_VOUCHER_COUNT_MESSAGE)
-
     if "I want to register as a SOMA Wellness member" in message and not crm_lead_doc.agree_pdpa:
         send_interactive_message(crm_lead_doc, whatsapp_id, PDPA_MESSAGE, PDPA_BUTTON)
 
@@ -2362,28 +2158,6 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
 
     whatsapp_interaction_message_template_buttons = frappe.db.get_all("WhatsApp Interaction Message Template Buttons", filters={"reply_id": interactive_id}, fields=["*"])
 
-    # if interactive_id == "accept-tnc":
-    #     crm_lead_doc.action = ""
-    #     crm_lead_doc.save(ignore_permissions=True)
-    #     send_interactive_message(crm_lead_doc, whatsapp_id, CHOOSE_PRODUCT_MESSAGE, CHOOSE_PRODUCT_BUTTON)
-    # elif "voucher" in interactive_id:
-    #     payment_url = generate_payment_url(crm_lead_doc, interactive_id.replace("-", " ").capitalize())
-    #     send_interactive_cta_message(crm_lead_doc, whatsapp_id, MAKE_PAYMENT_MESSAGE, "Make Payment", payment_url)
-    # elif "confirm-redeem-" in interactive_id and crm_lead_doc.action == "Redeem Voucher":
-    #     customer_vouchers = get_customer_vouchers(crm_lead_doc.name)
-
-    #     voucher_list_message = "Here's your code! 🎉\nPlease show it to our front desk to redeem your hours. 😊\nFor your security, kindly keep the code private and don't share it with others. 🔒\n\n"
-
-    #     for i in range(int(interactive_id.replace("confirm-redeem-", ""))):
-    #         voucher_list_message += customer_vouchers[i].code
-    #         if i != (int(interactive_id.replace("confirm-redeem-", "")) - 1):
-    #             voucher_list_message += "\n"
-
-    #     crm_lead_doc.action = ""
-    #     crm_lead_doc.save(ignore_permissions=True)
-    #     send_message(crm_lead_doc, whatsapp_id, voucher_list_message)
-    # elif interactive_id == "cancel-redeem" and crm_lead_doc.action == "Redeem Voucher":
-    #     send_message(crm_lead_doc, whatsapp_id, ENTER_VOUCHER_COUNT_MESSAGE)
     if whatsapp_interaction_message_template_buttons:
         create_crm_lead_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_buttons[0].whatsapp_message_templates)
         create_crm_tagging_assignment(crm_lead_doc.name, whatsapp_interaction_message_template_buttons[0].tagging)
@@ -2407,8 +2181,6 @@ def handle_interactive_message(interactive_id, whatsapp_id, customer_name, crm_l
                     "crm_lead": crm_lead_doc.name
                 }).insert(ignore_permissions=True)
             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=OUT_OF_BOOKING_HOURS_MESSAGE, queue="short", is_async=True)
-    # else:
-    #     send_message(crm_lead_doc, whatsapp_id, DO_NOT_UNDERSTAND_MESSAGE)
 
 def handle_template_message_reply(whatsapp_id, customer_name, message, reply_to_message_id, crm_lead_doc=None):
     reply_to_messages = frappe.db.get_all("WhatsApp Message", filters={"message_id": reply_to_message_id}, fields=["name", "whatsapp_message_templates", "replied"])
@@ -3090,179 +2862,6 @@ def get_crm_lead(whatsapp_id, customer_name):
     else:
         crm_lead_doc = frappe.get_doc("CRM Lead", reference_name)
     return crm_lead_doc
-
-def get_customer_vouchers(crm_lead):
-    values = {
-        "crm_lead": crm_lead
-    }
-
-    return frappe.db.sql("""
-        SELECT
-            wv.code
-        FROM `tabWhatsapp Order` wo
-        JOIN `tabWhatsapp Voucher` wv
-        ON wv.whatsapp_order = wo.name
-        WHERE wo.crm_lead = %(crm_lead)s
-        AND wv.status = "Issued"
-        ORDER BY wv.code
-    """,values=values, as_dict=1)
-
-@frappe.whitelist(allow_guest=True)
-def fiuu_callback():
-    if not validate_webhook_request():
-        return
-
-    whatsapp_orders = frappe.db.get_all("Whatsapp Order", filters={"name": frappe.form_dict.orderid}, pluck="name")
-    if not whatsapp_orders:
-        return
-
-    whatsapp_order_doc = frappe.get_doc("Whatsapp Order", whatsapp_orders[0])
-    whatsapp_order_doc.payment_status = PAYMENT_STATUS_MAPPING[frappe.form_dict.status]
-    whatsapp_order_doc.transaction_id = frappe.form_dict.tranID
-    whatsapp_order_doc.save(ignore_permissions=True)
-    if whatsapp_order_doc.payment_status == "Completed":
-        issue_voucher(whatsapp_order_doc)
-        crm_lead_doc = frappe.get_doc("CRM Lead", whatsapp_order_doc.crm_lead)
-        send_message(crm_lead_doc, crm_lead_doc.mobile_no, COMPLETED_BOOKING_MESSAGE)
-
-@frappe.whitelist(allow_guest=True)
-def fiuu_notification():
-    if not validate_webhook_request():
-        return
-
-    whatsapp_orders = frappe.db.get_all("Whatsapp Order", filters={"name": frappe.form_dict.orderid}, pluck="name")
-    if not whatsapp_orders:
-        return
-
-    whatsapp_order_doc = frappe.get_doc("Whatsapp Order", whatsapp_orders[0])
-    whatsapp_order_doc.payment_status = PAYMENT_STATUS_MAPPING[frappe.form_dict.status]
-    whatsapp_order_doc.transaction_id = frappe.form_dict.tranID
-    whatsapp_order_doc.save(ignore_permissions=True)
-    if whatsapp_order_doc.payment_status == "Completed":
-        issue_voucher(whatsapp_order_doc)
-        crm_lead_doc = frappe.get_doc("CRM Lead", whatsapp_order_doc.crm_lead)
-        send_message(crm_lead_doc, crm_lead_doc.mobile_no, COMPLETED_BOOKING_MESSAGE)
-
-def validate_webhook_request():
-    fiuu_settings = frappe.get_single("Fiuu Settings")
-
-    secret_key = fiuu_settings.get_password("secret_key")
-    tranID = frappe.form_dict.tranID
-    orderid = frappe.form_dict.orderid
-    status = frappe.form_dict.status
-    domain = frappe.form_dict.domain
-    amount = frappe.form_dict.amount
-    currency = frappe.form_dict.currency
-    appcode = frappe.form_dict.appcode
-    paydate = frappe.form_dict.paydate
-    skey = frappe.form_dict.skey
-
-    key_1 = calculate_md5(tranID + orderid + status + domain + amount + currency)
-    key_2 = calculate_md5(paydate + domain + key_1 + appcode + secret_key)
-
-    if skey != key_2:
-        return False
-    
-    return True
-
-def issue_voucher(whatsapp_order_doc):
-    for whatsapp_order_product in whatsapp_order_doc.whatsapp_order_product:
-        whatsapp_product_doc = frappe.get_doc("Whatsapp Product", whatsapp_order_product.whatsapp_product)
-        quantity_to_issue = whatsapp_order_product.quantity * whatsapp_product_doc.voucher_count
-        issue_whatsapp_voucher(whatsapp_order_doc, whatsapp_order_product.whatsapp_product, quantity_to_issue)
-
-def issue_whatsapp_voucher(whatsapp_order_doc, whatsapp_product, quantity):
-    whatsapp_vouchers = frappe.db.get_all("Whatsapp Voucher", filters={"status": "Available", "whatsapp_product": whatsapp_product}, pluck="name", limit=cint(quantity))
-    if len(whatsapp_vouchers) != cint(quantity):
-        frappe.throw("Not enough voucher for product {0}".format(whatsapp_product))
-    for whatsapp_voucher in whatsapp_vouchers:
-        whatsapp_voucher_doc = frappe.get_doc("Whatsapp Voucher", whatsapp_voucher)
-        whatsapp_voucher_doc.status = "Issued"
-        whatsapp_voucher_doc.whatsapp_order = whatsapp_order_doc.name
-        whatsapp_voucher_doc.save(ignore_permissions=True)
-
-@frappe.whitelist()
-def redeem_whatsapp_vouchers():
-    frappe.response["success"] = False
-    vouchers_redeemed = []
-    customer_names = []
-    try:
-        if frappe.form_dict.vouchers_to_redeem["codes"]:
-            for code in frappe.form_dict.vouchers_to_redeem["codes"]:
-                whatsapp_vouchers = frappe.db.get_all("Whatsapp Voucher", filters={"name": code}, fields=["name", "status"])
-                if whatsapp_vouchers:
-                    if whatsapp_vouchers[0].status == "Issued":
-                        whatsapp_voucher = frappe.get_doc("Whatsapp Voucher", whatsapp_vouchers[0].name)
-                        whatsapp_voucher.status = "Redeemed"
-                        whatsapp_voucher.redeemed_at = get_datetime()
-                        whatsapp_voucher.save(ignore_permissions=True)
-                        if whatsapp_voucher.whatsapp_order:
-                            customer_name = frappe.db.get_value("Whatsapp Order", whatsapp_voucher.whatsapp_order, "whatsapp_customer")
-                            if customer_name not in customer_names:
-                                customer_names.append(customer_name)
-                        vouchers_redeemed.append(code)
-            for customer_name in customer_names:
-                send_message(customer_name, REDEEMED_VOUCHER_MESSAGE)
-            frappe.response["success"] = True
-            frappe.response["message"] = "successfully updated whatsapp vouchers listed in array vouchers_redeemed"
-            frappe.response["vouchers_redeemed"] = vouchers_redeemed
-        else:
-            frappe.response["message"] = "missing codes in request body"
-            frappe.response["vouchers_redeemed"] = vouchers_redeemed
-    except KeyError:
-        frappe.response["message"] = "invalid request body"
-        frappe.response["vouchers_redeemed"] = vouchers_redeemed
-    except TypeError:
-        frappe.response["message"] = "invalid request body"
-        frappe.response["vouchers_redeemed"] = vouchers_redeemed
-
-@frappe.whitelist()
-def refund_whatsapp_vouchers():
-    frappe.response["success"] = False
-    vouchers_refunded = []
-    try:
-        if frappe.form_dict.vouchers_to_refund["codes"]:
-            for code in frappe.form_dict.vouchers_to_refund["codes"]:
-                whatsapp_vouchers = frappe.db.get_all("Whatsapp Voucher", filters={"name": code}, fields=["name", "status"])
-                if whatsapp_vouchers:
-                    if whatsapp_vouchers[0].status == "Redeemed":
-                        whatsapp_voucher = frappe.get_doc("Whatsapp Voucher", whatsapp_vouchers[0].name)
-                        whatsapp_voucher.status = "Issued"
-                        whatsapp_voucher.redeemed_at = ""
-                        whatsapp_voucher.save(ignore_permissions=True)
-                        vouchers_refunded.append(code)
-            frappe.response["success"] = True
-            frappe.response["message"] = "successfully updated Whatsapp Vouchers listed in array vouchers_refunded"
-            frappe.response["vouchers_refunded"] = vouchers_refunded
-        else:
-            frappe.response["message"] = "missing codes in request body"
-            frappe.response["vouchers_refunded"] = vouchers_refunded
-    except KeyError:
-        frappe.response["message"] = "invalid request body"
-        frappe.response["vouchers_refunded"] = vouchers_refunded
-    except TypeError:
-        frappe.response["message"] = "invalid request body"
-        frappe.response["vouchers_refunded"] = vouchers_refunded
-
-def send_follow_up_message():
-    whatsapp_vouchers_to_follow_up = frappe.db.sql("""
-        SELECT
-            wv.name AS voucher_name, cl.name AS crm_lead_id, cl.first_name AS customer_name
-        FROM `tabWhatsapp Voucher` wv
-        JOIN `tabWhatsapp Order` wo
-        ON wv.whatsapp_order = wo.name
-        JOIN `tabCRM Lead` cl
-        ON wo.crm_lead = cl.name
-        WHERE wv.redeemed_at <= DATE_SUB(NOW(), INTERVAL 2 HOUR)
-        AND done_follow_up = 0
-    """, as_dict=1)
-
-    for whatsapp_voucher in whatsapp_vouchers_to_follow_up:
-        crm_lead_doc = frappe.get_doc("CRM Lead", whatsapp_voucher.crm_lead_id)
-        send_message(crm_lead_doc, whatsapp_voucher.customer_name, FOLLOW_UP_MESSAGE)
-        whatsapp_voucher_doc = frappe.get_doc("Whatsapp Voucher", whatsapp_voucher.voucher_name)
-        whatsapp_voucher_doc.done_follow_up = 1
-        whatsapp_voucher_doc.save(ignore_permissions=True)
 
 def is_not_within_operating_hours():
     current_datetime = get_datetime()
