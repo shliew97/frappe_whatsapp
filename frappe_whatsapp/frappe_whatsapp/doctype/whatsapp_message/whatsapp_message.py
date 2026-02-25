@@ -296,7 +296,9 @@ PLEASE_KEY_IN_VALID_MOBILE_NO_MESSAGE = "Hi! So sorry — the phone number you e
 
 REQUEST_MEMBERSHIP_RATE_ENDPOINT = "/api/method/healthland_pos.api.request_membership_rate"
 FREE_MEMBERSHIP_REDEMPTION_ENDPOINT = "/api/method/healthland_pos.api.redeem_free_membership"
-WHATSAPP_LOGIN_ENDPOINT = "/api/method/healthland_pos.api.whatsapp_login"
+CHECKOUT_LOGIN_ENDPOINT = "/api/method/healthland_pos.api.whatsapp_login"
+REGISTRATION_ENDPOINT = "/api/method/healthland_pos.api.whatsapp_registration"
+RESET_PASSWORD_ENDPOINT = "/api/method/healthland_pos.api.whatsapp_reset_password"
 
 PDPA_MESSAGE = "Thank you for joining SOMA Wellness Membership 🌸\n\nBefore we continue, please acknowledge the following:\n• Your details will be used for membership, booking and service updates.\n• You agree to receive wellness tips, exclusive offers and promotions from SOMA Wellness.\n• Your data is protected under the PDPA and will not be shared with others.\n\nBy replying “Agree”, you agree to the above Terms & Conditions."
 PDPA_BUTTON = [
@@ -2020,17 +2022,24 @@ def handle_text_message(message, whatsapp_id, customer_name, crm_lead_doc=None):
     if not crm_lead_doc:
         crm_lead_doc = get_crm_lead(whatsapp_id, customer_name)
 
-    if "I want to register as a SOMA Wellness member" in message and not crm_lead_doc.agree_pdpa:
+    integration_keyword_settings = frappe.get_single("Integration Keyword Settings")
+
+    if integration_keyword_settings.register_as_member_keyword and integration_keyword_settings.register_as_member_keyword in message and not crm_lead_doc.agree_pdpa:
+        create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
         send_interactive_message(crm_lead_doc, whatsapp_id, PDPA_MESSAGE, PDPA_BUTTON)
 
-    if "like to enjoy my SOM SOM membership rate for today" in message:
-        handle_soma_membership_rate_request(crm_lead_doc, whatsapp_id)
-    elif "1 year SOM SOM membership code" in message:
-        handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message)
-    elif "I would like to Login with this WhatsApp number" in message:
-        handle_whatsapp_login(crm_lead_doc, whatsapp_id, message)
+    if integration_keyword_settings.request_membership_rate_keyword and integration_keyword_settings.request_membership_rate_keyword in message:
+        handle_membership_rate_request(crm_lead_doc, whatsapp_id)
+    elif integration_keyword_settings.free_membership_redemption_keyword and integration_keyword_settings.free_membership_redemption_keyword in message:
+        handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message)
+    elif integration_keyword_settings.checkout_login_keyword and integration_keyword_settings.checkout_login_keyword in message:
+        handle_checkout_login(crm_lead_doc, whatsapp_id, message)
     elif message.isdigit() and len(message) == 6:
-        handle_whatsapp_login(crm_lead_doc, whatsapp_id, message)
+        handle_checkout_login(crm_lead_doc, whatsapp_id, message)
+    elif integration_keyword_settings.registration_keyword and integration_keyword_settings.registration_keyword in message:
+        handle_registration(crm_lead_doc, whatsapp_id, message)
+    elif integration_keyword_settings.reset_password_keyword and integration_keyword_settings.reset_password_keyword in message:
+        handle_reset_password(crm_lead_doc, whatsapp_id, message)
     elif message.isdigit() and crm_lead_doc.latest_whatsapp_message_templates:
         whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", crm_lead_doc.latest_whatsapp_message_templates)
         for whatsapp_message_template_button in whatsapp_message_template_doc.whatsapp_message_template_buttons:
@@ -2984,7 +2993,9 @@ def create_crm_tagging_assignment(crm_lead, tagging, status=None):
             "tagging": "Unknown"
         })
 
-def handle_soma_membership_rate_request(crm_lead_doc, whatsapp_id):
+def handle_membership_rate_request(crm_lead_doc, whatsapp_id):
+    frappe.flags.skip_lead_status_update = True
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
@@ -3010,7 +3021,9 @@ def handle_soma_membership_rate_request(crm_lead_doc, whatsapp_id):
         except requests.RequestException as e:
             frappe.throw(f"An error occurred: {e}")
 
-def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
+def handle_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     free_member_subscription_id = message.split(":")[-1].strip().lower()
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
@@ -3044,14 +3057,17 @@ def handle_soma_free_membership_redemption(crm_lead_doc, whatsapp_id, message):
         except requests.RequestException as e:
             frappe.throw(f"An error occurred: {e}")
 
-def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
+def handle_checkout_login(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
     if "I would like to Login with this WhatsApp number" in message:
-        message = message.split("OTP:")[1].strip()
+        parts = message.split("OTP:", 1)
+        message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
 
     integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
-        url = integration_settings_doc.site_url + WHATSAPP_LOGIN_ENDPOINT
+        url = integration_settings_doc.site_url + CHECKOUT_LOGIN_ENDPOINT
 
         headers = {
             "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
@@ -3063,6 +3079,74 @@ def handle_whatsapp_login(crm_lead_doc, whatsapp_id, message):
             "first_name": crm_lead_doc.lead_name,
             "otp": message,
             "outlet": integration_settings_doc.outlet,
+        }
+
+        try:
+            response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
+            response.raise_for_status()
+            response_data = response.json()
+
+            if response_data.get("message") and response_data.get("cta_url") and response_data.get("cta_label"):
+                send_interactive_cta_message_with_delay(crm_lead_doc, whatsapp_id, response_data["message"], response_data["cta_label"], response_data["cta_url"])
+
+        except requests.Timeout:
+            frappe.throw("Request timed out after 30 seconds")
+        except requests.RequestException as e:
+            frappe.throw(f"An error occurred: {e}")
+
+def handle_registration(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
+    parts = message.split("OTP:", 1)
+    message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
+
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
+    for integration_setting in integration_settings:
+        integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
+        url = integration_settings_doc.site_url + REGISTRATION_ENDPOINT
+
+        headers = {
+            "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
+            "Content-Type": "application/json"
+        }
+
+        request_body = {
+            "mobile_no": whatsapp_id,
+            "otp": message,
+        }
+
+        try:
+            response = requests.post(url, json=request_body, headers=headers, timeout=30)  # 30 seconds timeout
+            response.raise_for_status()
+            response_data = response.json()
+
+            if response_data.get("message") and response_data.get("cta_url") and response_data.get("cta_label"):
+                send_interactive_cta_message_with_delay(crm_lead_doc, whatsapp_id, response_data["message"], response_data["cta_label"], response_data["cta_url"])
+
+        except requests.Timeout:
+            frappe.throw("Request timed out after 30 seconds")
+        except requests.RequestException as e:
+            frappe.throw(f"An error occurred: {e}")
+
+def handle_reset_password(crm_lead_doc, whatsapp_id, message):
+    frappe.flags.skip_lead_status_update = True
+    create_crm_lead_assignment(crm_lead_doc.name, "BookingHL", "Completed")
+    parts = message.split("OTP:", 1)
+    message = parts[1].strip() if len(parts) > 1 else "XXXXXX"
+
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
+    for integration_setting in integration_settings:
+        integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
+        url = integration_settings_doc.site_url + RESET_PASSWORD_ENDPOINT
+
+        headers = {
+            "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
+            "Content-Type": "application/json"
+        }
+
+        request_body = {
+            "mobile_no": whatsapp_id,
+            "otp": message,
         }
 
         try:

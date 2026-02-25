@@ -70,7 +70,7 @@ def post(form_dict):
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
 					"content_type": message_type,
-					"from_name": contacts[0]["profile"]["name"],
+					"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
@@ -83,7 +83,7 @@ def post(form_dict):
 					"reply_to_message_id": message['reaction']['message_id'],
 					"message_id": message['id'],
 					"content_type": "reaction",
-					"from_name": contacts[0]["profile"]["name"],
+					"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
@@ -101,11 +101,10 @@ def post(form_dict):
 						"interactive_id": interactive_data['button_reply']['id'],
 						"message_id": message['id'],
 						"content_type": "flow",
-						"from_name": contacts[0]["profile"]["name"],
+						"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 						"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 						"is_forwarded": is_forwarded,
 					}).insert(ignore_permissions=True)
-
 				# Handle list_reply (from interactive list messages)
 				elif interactive_type == 'list_reply':
 					frappe.get_doc({
@@ -116,7 +115,7 @@ def post(form_dict):
 						"interactive_id": interactive_data['list_reply']['id'],
 						"message_id": message['id'],
 						"content_type": "list_reply",
-						"from_name": contacts[0]["profile"]["name"],
+						"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 						"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 						"is_forwarded": is_forwarded,
 					}).insert(ignore_permissions=True)
@@ -158,7 +157,7 @@ def post(form_dict):
 							"is_reply": is_reply,
 							"message": message[message_type].get("caption",f"/files/{file_name}"),
 							"content_type" : message_type,
-							"from_name": contacts[0]["profile"]["name"],
+							"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 							"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 							"is_forwarded": is_forwarded,
 						}).insert(ignore_permissions=True)
@@ -187,7 +186,7 @@ def post(form_dict):
 					"reply_to_message_id": reply_to_message_id,
 					"is_reply": is_reply,
 					"content_type": message_type,
-					"from_name": contacts[0]["profile"]["name"],
+					"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
@@ -204,7 +203,7 @@ def post(form_dict):
 					"is_reply": is_reply,
 					"message": json.dumps(location_data),
 					"content_type": message_type,
-					"from_name": contacts[0]["profile"]["name"],
+					"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
@@ -216,7 +215,7 @@ def post(form_dict):
 					"message_id": message['id'],
 					"message": message[message_type].get(message_type),
 					"content_type" : message_type,
-					"from_name": contacts[0]["profile"]["name"],
+					"from_name": contacts[0].get("profile", {}).get("name") or message['from'],
 					"timestamp": datetime.fromtimestamp(float(message['timestamp']) + 28800),
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
