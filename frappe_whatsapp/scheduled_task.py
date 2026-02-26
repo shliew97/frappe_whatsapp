@@ -116,7 +116,7 @@ def send_pending_notification_template(crm_lead, whatsapp_message_template, phon
         "type": "Outgoing",
         "reference_doctype": "CRM Lead",
         "reference_name": crm_lead.name,
-        "message_type": "Template",
+        "message_type": "Manual",
         "message": whatsapp_message_template_doc.message,
         "content_type": "text",
         "to": phone_number,
