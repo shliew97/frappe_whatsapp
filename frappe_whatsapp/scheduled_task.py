@@ -3,6 +3,7 @@ import json
 from frappe.utils import get_datetime, now_datetime, add_days
 from frappe.utils.user import get_users_with_role
 from frappe.integrations.utils import make_post_request
+import requests
 
 def send_noficiation_for_new_crm_leads():
     crm_agents = get_users_with_role("CRM Agent")
@@ -183,3 +184,32 @@ def send_push_notification(user, title, message, url=None):
         push_notification.message = message
         push_notification.url = url
         push_notification.insert(ignore_permissions=True)
+
+def sync_outlets():
+    outlets = []
+    integration_settings = frappe.get_all("Integration Settings", pluck="name")
+    for integration_setting in integration_settings:
+        integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
+        url = integration_settings_doc.site_url + "/api/method/healthland_pos.api.get_outlets"
+        headers = {
+            "Authorization": "Basic {0}".format(integration_settings_doc.get_password("access_token")),
+            "Content-Type": "application/json"
+        }
+        try:
+            response = requests.post(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            response_json = response.json()
+            for outlet in response_json.get("outlets", []):
+                outlets.append(outlet)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"Sync Outlets Failed: {integration_setting}")
+
+    frappe.db.delete("Outlet")
+    for outlet in outlets:
+        if not frappe.db.exists("Outlet", outlet.get("name")):
+            frappe.get_doc({
+                "doctype": "Outlet",
+                "branch_code": outlet.get("name"),
+                "shop_full_name": outlet.get("shop_full_name"),
+            }).insert(ignore_permissions=True)
+    frappe.db.commit()

@@ -134,6 +134,9 @@ scheduler_events = {
       "45 8 * * *": [
           "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_booking_follow_up"
       ],
+      "0 2 * * *": [
+          "frappe_whatsapp.scheduled_task.sync_outlets"
+      ],
   },
 #   "weekly": [
 #       "frappe_whatsapp.tasks.weekly"
