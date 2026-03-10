@@ -186,8 +186,7 @@ def send_push_notification(user, title, message, url=None):
         push_notification.insert(ignore_permissions=True)
 
 def sync_outlets():
-    outlets = []
-    integration_settings = frappe.get_all("Integration Settings", pluck="name")
+    integration_settings = frappe.db.get_all("Integration Settings", filters={"active": 1}, pluck="name")
     for integration_setting in integration_settings:
         integration_settings_doc = frappe.get_doc("Integration Settings", integration_setting)
         url = integration_settings_doc.site_url + "/api/method/healthland_pos.api.get_outlets"
@@ -199,17 +198,15 @@ def sync_outlets():
             response = requests.post(url, headers=headers, timeout=30)
             response.raise_for_status()
             response_json = response.json()
-            for outlet in response_json.get("outlets", []):
-                outlets.append(outlet)
+            outlets = response_json.get("outlets", [])
+
+            frappe.db.truncate("Outlet")
+
+            for outlet in outlets:
+                frappe.get_doc({
+                    "doctype": "Outlet",
+                    "branch_code": outlet.get("name"),
+                    "shop_full_name": outlet.get("shop_full_name"),
+                }).insert(ignore_permissions=True)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"Sync Outlets Failed: {integration_setting}")
-
-    frappe.db.delete("Outlet")
-    for outlet in outlets:
-        if not frappe.db.exists("Outlet", outlet.get("name")):
-            frappe.get_doc({
-                "doctype": "Outlet",
-                "branch_code": outlet.get("name"),
-                "shop_full_name": outlet.get("shop_full_name"),
-            }).insert(ignore_permissions=True)
-    frappe.db.commit()
