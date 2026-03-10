@@ -271,6 +271,10 @@ def update_message_status(data):
 					pending_data[field] = doc.get(field)
 				pending_data["expires_at"] = frappe.utils.now_datetime() + timedelta(days=2)
 				frappe.get_doc(pending_data).insert(ignore_permissions=True)
+
+			doc.flags.ignore_permissions = True
+			doc.delete()
+
 			frappe.publish_realtime(
 				"whatsapp_message",
 				{
@@ -278,8 +282,6 @@ def update_message_status(data):
 					"reference_name": doc.reference_name,
 				},
 			)
-			doc.flags.ignore_permissions = True
-			doc.delete()
 		else:
 			doc.status = status
 			if conversation:
