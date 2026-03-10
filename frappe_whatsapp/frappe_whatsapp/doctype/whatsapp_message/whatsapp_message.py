@@ -14,6 +14,7 @@ import requests
 from frappe.utils.background_jobs import enqueue
 from frappe.core.doctype.file.utils import find_file_by_url
 import re
+import base64
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import (
     get_rag_chain,
     is_booking_details_message,
@@ -528,9 +529,6 @@ def handle_clock_in_api(staff_doc, whatsapp_id, clock_details):
 
     return {"success": False, "message": "Failed to process clock request"}
 
-import base64
-
-
 def get_clock_log_type(crm_lead_doc):
     """Get stored log type from cache (IN or OUT)."""
     try:
@@ -538,7 +536,6 @@ def get_clock_log_type(crm_lead_doc):
         return frappe.cache().get_value(cache_key) or "IN"
     except Exception:
         return "IN"
-
 
 def set_clock_log_type(crm_lead_doc, log_type):
     """Store log type in cache (expires in 10 minutes)."""
@@ -548,7 +545,6 @@ def set_clock_log_type(crm_lead_doc, log_type):
     except Exception as e:
         frappe.log_error("Clock Log Type Cache Error", str(e))
 
-
 def get_face_registration_mode(crm_lead_doc):
     """Check if user is in face registration mode."""
     try:
@@ -556,7 +552,6 @@ def get_face_registration_mode(crm_lead_doc):
         return frappe.cache().get_value(cache_key) or False
     except Exception:
         return False
-
 
 def set_face_registration_mode(crm_lead_doc, enabled=True):
     """Set face registration mode in cache (expires in 10 minutes)."""
@@ -569,7 +564,6 @@ def set_face_registration_mode(crm_lead_doc, enabled=True):
     except Exception as e:
         frappe.log_error("Face Registration Mode Cache Error", str(e))
 
-
 def get_leave_application_mode(crm_lead_doc):
     """Check if user is in leave application mode and get leave type."""
     try:
@@ -577,7 +571,6 @@ def get_leave_application_mode(crm_lead_doc):
         return frappe.cache().get_value(cache_key) or None
     except Exception:
         return None
-
 
 def set_leave_application_mode(crm_lead_doc, leave_type=None):
     """Set leave application mode in cache with leave type (expires in 10 minutes)."""
@@ -589,7 +582,6 @@ def set_leave_application_mode(crm_lead_doc, leave_type=None):
             frappe.cache().delete_value(cache_key)
     except Exception as e:
         frappe.log_error("Leave Application Mode Cache Error", str(e))
-
 
 def extract_leave_date_and_reason(message):
     """
@@ -2269,12 +2261,10 @@ def send_location_request_message(crm_lead_doc, whatsapp_id, text):
         frappe.log_error("Location Request Message Error", str(e))
         return False
 
-
 def send_location_request_message_with_delay(crm_lead_doc, whatsapp_id, text):
     """Send location request message with a delay."""
     time.sleep(1)
     send_location_request_message(crm_lead_doc, whatsapp_id, text)
-
 
 def send_interactive_cta_message_with_delay(crm_lead_doc, whatsapp_id, text, cta_label, cta_url):
     time.sleep(2)
@@ -2338,7 +2328,6 @@ def send_interactive_cta_message(crm_lead_doc, whatsapp_id, text, cta_label, cta
 
     return False
 
-
 def send_interactive_list_message_with_delay(crm_lead_doc, whatsapp_id, header_text, body_text, footer_text, button_text, sections):
     """
     Send interactive list message with a delay.
@@ -2364,7 +2353,6 @@ def send_interactive_list_message_with_delay(crm_lead_doc, whatsapp_id, header_t
     """
     time.sleep(2)
     return send_interactive_list_message(crm_lead_doc, whatsapp_id, header_text, body_text, footer_text, button_text, sections)
-
 
 def send_interactive_list_message(crm_lead_doc, whatsapp_id, header_text, body_text, footer_text, button_text, sections):
     """
@@ -2479,7 +2467,6 @@ def send_interactive_list_message(crm_lead_doc, whatsapp_id, header_text, body_t
             message=f"Exception sending list message: {str(e)}"
         )
         return {"success": False, "error": str(e)}
-
 
 def handle_interactive_list_reply(whatsapp_id, customer_name, list_reply_id, list_reply_title, crm_lead_doc=None):
     """
@@ -2614,7 +2601,6 @@ def handle_interactive_list_reply(whatsapp_id, customer_name, list_reply_id, lis
             message=f"Error handling list reply: {str(e)}\nReply ID: {list_reply_id}\nWhatsApp ID: {whatsapp_id}"
         )
         return False
-
 
 def get_crm_lead(whatsapp_id, customer_name):
     reference_name, doctype = get_lead_or_deal_from_number(whatsapp_id)
