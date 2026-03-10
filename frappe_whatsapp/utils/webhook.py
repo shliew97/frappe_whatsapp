@@ -191,7 +191,6 @@ def post(form_dict):
 					"is_forwarded": is_forwarded,
 				}).insert(ignore_permissions=True)
 			elif message_type == "location":
-				print()
 				# Handle location messages - store as JSON with latitude, longitude, name, address
 				location_data = message.get('location', {})
 				frappe.get_doc({
