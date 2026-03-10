@@ -75,25 +75,6 @@ def send_pending_notification_template(crm_lead, whatsapp_message_template, phon
         "content-type": "application/json",
     }
 
-    parameters = [{
-        "type": "text",
-        "parameter_name": param.parameter_name,
-        "text": (crm_lead.lead_name or crm_lead.first_name or "dear customer") if param.parameter_name == "customer_name" else ""
-    } for param in whatsapp_message_template_doc.whatsapp_message_template_parameters]
-
-    components = [{"type": "body", "parameters": parameters}] if parameters else []
-
-    if whatsapp_message_template_doc.header_image:
-        components.append({
-            "type": "header",
-            "parameters": [{
-                "type": "image",
-                "image": {
-                    "link": "https://crm.techmind.com.my{0}".format(whatsapp_message_template_doc.header_image)
-                }
-            }]
-        })
-
     data = {
         "messaging_product": "whatsapp",
         "to": phone_number,
@@ -101,7 +82,7 @@ def send_pending_notification_template(crm_lead, whatsapp_message_template, phon
         "template": {
             "name": whatsapp_message_template_doc.name,
             "language": {"code": "en"},
-            "components": components,
+            "components": [],
         },
     }
 
