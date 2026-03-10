@@ -58,11 +58,11 @@
   {
    "default": "Pending",
    "fieldname": "status",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
    "options": "Pending\nExpired\nCompleted",
-   "read_only": 1
+   "search_index": 1
   },
   {
    "allow_in_quick_entry": 1,
@@ -230,7 +230,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-11 18:02:43.504039",
+ "modified": "2026-03-10 10:27:38.826364",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Pending WhatsApp Message",
