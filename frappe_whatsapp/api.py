@@ -117,209 +117,6 @@ def schedule_send_whatsapp_template(whatsapp_message_template, whatsapp_template
             frappe.log_error(title="Error", message=str(e))
 
 @frappe.whitelist()
-def send_test_message(mobile_no):
-    try:
-        frappe.response["success"] = False
-        whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
-        whitelisted_numbers = [whitelisted_number.mobile_no for whitelisted_number in whatsapp_api_settings.whitelisted_number]
-        if mobile_no not in whitelisted_numbers:
-            frappe.response["message"] = "You are not allowed to send message to this number."
-            return
-        reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
-        if not reference_name:
-            crm_lead_doc = frappe.new_doc("CRM Lead")
-            crm_lead_doc.lead_name = mobile_no
-            crm_lead_doc.first_name = mobile_no
-            crm_lead_doc.last_name = ""
-            crm_lead_doc.mobile_no = mobile_no
-            crm_lead_doc.whatsapp_message_templates = "hello_world_v2"
-            crm_lead_doc.insert(ignore_permissions=True)
-            reference_name = crm_lead_doc.name
-        else:
-            crm_lead_doc = frappe.get_doc(doctype, reference_name)
-            crm_lead_doc.whatsapp_message_templates = "hello_world_v2"
-            crm_lead_doc.save(ignore_permissions=True)
-
-        whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", "hello_world_v2")
-        settings = frappe.get_single("WhatsApp Settings")
-        token = settings.get_password("token")
-
-        headers = {
-            "authorization": f"Bearer {token}",
-            "content-type": "application/json",
-        }
-
-        data = {
-            "messaging_product": "whatsapp",
-            "to": mobile_no,
-            "type": "template",
-            "template": {
-                "name": whatsapp_message_template_doc.name,
-                "language": {"code": "en"},
-                "components": [],
-            },
-        }
-
-        response = make_post_request(
-            f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
-            headers=headers,
-            data=json.dumps(data),
-        )
-
-        message_id = response["messages"][0]["id"]
-
-        doc = frappe.new_doc("WhatsApp Message")
-        doc.update(
-            {
-                "reference_doctype": "CRM Lead",
-                "reference_name": reference_name,
-                "message_type": "Manual",
-                "message": whatsapp_message_template_doc.message,
-                "content_type": "text",
-                "to": mobile_no,
-                "message_id": message_id,
-                "status": "Success",
-                "timestamp": get_datetime(),
-                "whatsapp_message_templates": whatsapp_message_template_doc.name
-            }
-        )
-        doc.flags.is_template_queue = True
-        doc.insert(ignore_permissions=True)
-        frappe.response["success"] = True
-        frappe.response["message"] = "Message successfully sent."
-    except Exception as e:
-        frappe.response["message"] = str(e)
-
-@frappe.whitelist()
-def send_template_message(mobile_no, template, parameters):
-    if isinstance(parameters, str):
-        parameters = json.loads(parameters)
-    try:
-        frappe.response["success"] = False
-        reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
-        if not reference_name:
-            crm_lead_doc = frappe.new_doc("CRM Lead")
-            crm_lead_doc.lead_name = mobile_no
-            crm_lead_doc.first_name = mobile_no
-            crm_lead_doc.last_name = ""
-            crm_lead_doc.mobile_no = mobile_no
-            crm_lead_doc.whatsapp_message_templates = template
-            crm_lead_doc.insert(ignore_permissions=True)
-            reference_name = crm_lead_doc.name
-        else:
-            crm_lead_doc = frappe.get_doc(doctype, reference_name)
-            crm_lead_doc.whatsapp_message_templates = template
-            crm_lead_doc.save(ignore_permissions=True)
-
-        whatsapp_message_template_doc = frappe.get_doc("WhatsApp Message Templates", template)
-        settings = frappe.get_single("WhatsApp Settings")
-        token = settings.get_password("token")
-
-        headers = {
-            "authorization": f"Bearer {token}",
-            "content-type": "application/json",
-        }
-
-        components = []
-
-        request_body_parameters = []
-
-        if parameters:
-            request_body_parameters = [{
-                "type": "text",
-                "parameter_name": parameter["parameter_name"],
-                "text": parameter["text"],
-            } for parameter in parameters]
-
-            components = [
-                {
-                    "type": "body",
-                    "parameters": request_body_parameters
-                }
-            ]
-
-        data = {
-            "messaging_product": "whatsapp",
-            "to": mobile_no,
-            "type": "template",
-            "template": {
-                "name": whatsapp_message_template_doc.name,
-                "language": {"code": "en"},
-                "components": components
-            },
-        }
-
-        response = make_post_request(
-            f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
-            headers=headers,
-            data=json.dumps(data),
-        )
-
-        message_id = response["messages"][0]["id"]
-
-        param_dict = {p["parameter_name"]: p["text"] for p in parameters}
-
-        message = whatsapp_message_template_doc.message.format(**param_dict)
-
-        doc = frappe.new_doc("WhatsApp Message")
-        doc.update(
-            {
-                "reference_doctype": "CRM Lead",
-                "reference_name": reference_name,
-                "message_type": "Manual",
-                "message": message,
-                "content_type": "text",
-                "to": mobile_no,
-                "message_id": message_id,
-                "status": "Success",
-                "timestamp": get_datetime(),
-                "whatsapp_message_templates": whatsapp_message_template_doc.name,
-            }
-        )
-        doc.flags.is_template_queue = True
-        doc.insert(ignore_permissions=True)
-        frappe.response["success"] = True
-        frappe.response["message"] = "Message successfully sent."
-    except Exception as e:
-        frappe.response["message"] = str(e)
-
-@frappe.whitelist()
-def register_webhook(url):
-    frappe.response["success"] = False
-
-    if not is_valid_https_url(url):
-        frappe.response["message"] = "Please register webhook with a valid URL supporting https."
-        return
-
-    whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
-    callback_webhook = frappe.db.get_all("WhatsApp Message Callback Webhook", filters={"url": url}, pluck="name")
-    if callback_webhook:
-        whatsapp_api_settings.current_callback_webhook = callback_webhook[0]
-        whatsapp_api_settings.save(ignore_permissions=True)
-    else:
-        callback_webhook_doc = frappe.new_doc("WhatsApp Message Callback Webhook")
-        callback_webhook_doc.url = url
-        callback_webhook_doc.insert(ignore_permissions=True)
-        whatsapp_api_settings.current_callback_webhook = callback_webhook_doc.name
-        whatsapp_api_settings.save(ignore_permissions=True)
-
-    frappe.response["success"] = True
-    frappe.response["message"] = "Successfully registered webhook."
-
-@frappe.whitelist()
-def unregister_current_webhook():
-    frappe.response["success"] = False
-    whatsapp_api_settings = frappe.get_single("WhatsApp API Settings")
-    whatsapp_api_settings.current_callback_webhook = None
-    whatsapp_api_settings.save(ignore_permissions=True)
-    frappe.response["success"] = True
-    frappe.response["message"] = "Successfully unregistered current webhook."
-
-def is_valid_https_url(url):
-    pattern = r"^https:\/\/[a-zA-Z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+$"
-    return bool(re.match(pattern, url))
-
-@frappe.whitelist()
 def send_message(mobile_no, message):
     try:
         frappe.response["success"] = False
@@ -336,47 +133,12 @@ def send_message(mobile_no, message):
             crm_lead_doc.first_name = mobile_no
             crm_lead_doc.last_name = ""
             crm_lead_doc.mobile_no = mobile_no
-            crm_lead_doc.whatsapp_message_templates = "hl_tech"
             crm_lead_doc.insert(ignore_permissions=True)
             reference_name = crm_lead_doc.name
         else:
             crm_lead_doc = frappe.get_doc(doctype, reference_name)
-            crm_lead_doc.whatsapp_message_templates = "hl_tech"
-            crm_lead_doc.save(ignore_permissions=True)
 
         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=mobile_no, text=message, queue="short", is_async=True)
-
-        frappe.response["success"] = True
-        frappe.response["message"] = "Message successfully sent."
-    except Exception as e:
-        frappe.response["message"] = str(e)
-
-@frappe.whitelist()
-def send_image(mobile_no, image_url, caption):
-    try:
-        frappe.response["success"] = False
-
-        if len(caption) >= 4096:
-            frappe.response["message"] = "Maximum length of caption is 4096 characters."
-            return
-
-        reference_name, doctype = get_lead_or_deal_from_number(mobile_no)
-
-        if not reference_name:
-            crm_lead_doc = frappe.new_doc("CRM Lead")
-            crm_lead_doc.lead_name = mobile_no
-            crm_lead_doc.first_name = mobile_no
-            crm_lead_doc.last_name = ""
-            crm_lead_doc.mobile_no = mobile_no
-            crm_lead_doc.whatsapp_message_templates = "hl_tech"
-            crm_lead_doc.insert(ignore_permissions=True)
-            reference_name = crm_lead_doc.name
-        else:
-            crm_lead_doc = frappe.get_doc(doctype, reference_name)
-            crm_lead_doc.whatsapp_message_templates = "hl_tech"
-            crm_lead_doc.save(ignore_permissions=True)
-
-        _send_image(crm_lead_doc, mobile_no, caption, image_url)
 
         frappe.response["success"] = True
         frappe.response["message"] = "Message successfully sent."
@@ -400,13 +162,10 @@ def send_cta_message(mobile_no, message, cta_label, cta_url):
             crm_lead_doc.first_name = mobile_no
             crm_lead_doc.last_name = ""
             crm_lead_doc.mobile_no = mobile_no
-            crm_lead_doc.whatsapp_message_templates = "hl_tech"
             crm_lead_doc.insert(ignore_permissions=True)
             reference_name = crm_lead_doc.name
         else:
             crm_lead_doc = frappe.get_doc(doctype, reference_name)
-            crm_lead_doc.whatsapp_message_templates = "hl_tech"
-            crm_lead_doc.save(ignore_permissions=True)
 
         enqueue(method=send_interactive_cta_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=mobile_no, text=message, cta_label=cta_label, cta_url=cta_url, queue="short", is_async=True)
 
