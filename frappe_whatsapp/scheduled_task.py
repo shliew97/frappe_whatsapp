@@ -4,6 +4,7 @@ from frappe.utils import get_datetime, now_datetime, add_days
 from frappe.utils.user import get_users_with_role
 from frappe.integrations.utils import make_post_request
 import requests
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import create_crm_lead_assignment
 
 def send_noficiation_for_new_crm_leads():
     crm_agents = get_users_with_role("CRM Agent")
@@ -109,6 +110,8 @@ def send_pending_notification_template(crm_lead, whatsapp_message_template, phon
     })
     doc.flags.is_template_queue = True
     doc.insert(ignore_permissions=True)
+
+    create_crm_lead_assignment(crm_lead.name, "BookingHL", "Completed")
 
 def cleanup_pending_whatsapp_messages():
     """Expire and clean up pending WhatsApp messages."""

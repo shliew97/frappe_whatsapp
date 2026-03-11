@@ -1989,8 +1989,7 @@ def send_pending_messages_for_lead(crm_lead_name, whatsapp_id):
             "reference_doctype": "CRM Lead",
             "reference_name": crm_lead_name
         },
-        fields=["name", "message", "content_type", "attach", "use_template", "template",
-                "template_parameters", "template_header_parameters"],
+        fields=["name", "message", "content_type", "attach"],
         order_by="creation asc"
     )
 
@@ -2001,34 +2000,19 @@ def send_pending_messages_for_lead(crm_lead_name, whatsapp_id):
 
     for pending in pending_messages:
         try:
-            if pending.use_template and pending.template:
+            if pending.content_type in ("image", "video", "document") and pending.attach:
                 whatsapp_msg = frappe.new_doc("WhatsApp Message")
                 whatsapp_msg.type = "Outgoing"
                 whatsapp_msg.to = whatsapp_id
-                whatsapp_msg.message_type = "Template"
-                whatsapp_msg.content_type = pending.content_type or "text"
+                whatsapp_msg.message_type = "Manual"
+                whatsapp_msg.content_type = pending.content_type
                 whatsapp_msg.message = pending.message
-                whatsapp_msg.use_template = 1
-                whatsapp_msg.template = pending.template
-                whatsapp_msg.template_parameters = pending.template_parameters
-                whatsapp_msg.template_header_parameters = pending.template_header_parameters
+                whatsapp_msg.attach = pending.attach
                 whatsapp_msg.reference_doctype = "CRM Lead"
                 whatsapp_msg.reference_name = crm_lead_name
                 whatsapp_msg.insert(ignore_permissions=True)
             else:
-                if pending.content_type in ("image", "video", "document") and pending.attach:
-                    whatsapp_msg = frappe.new_doc("WhatsApp Message")
-                    whatsapp_msg.type = "Outgoing"
-                    whatsapp_msg.to = whatsapp_id
-                    whatsapp_msg.message_type = "Manual"
-                    whatsapp_msg.content_type = pending.content_type
-                    whatsapp_msg.message = pending.message
-                    whatsapp_msg.attach = pending.attach
-                    whatsapp_msg.reference_doctype = "CRM Lead"
-                    whatsapp_msg.reference_name = crm_lead_name
-                    whatsapp_msg.insert(ignore_permissions=True)
-                else:
-                    send_message(crm_lead_doc, whatsapp_id, pending.message)
+                send_message(crm_lead_doc, whatsapp_id, pending.message)
 
             frappe.db.set_value("Pending WhatsApp Message", pending.name, "status", "Completed", update_modified=False)
             frappe.db.commit()
