@@ -14,10 +14,6 @@
   "from",
   "from_name",
   "timestamp",
-  "use_template",
-  "template",
-  "template_parameters",
-  "template_header_parameters",
   "column_break_5",
   "message",
   "message_type",
@@ -26,9 +22,6 @@
   "interactive_id",
   "content_type",
   "attach",
-  "whatsapp_message_templates",
-  "replied",
-  "is_forwarded",
   "expires_at",
   "section_break_iyjf",
   "is_reply",
@@ -93,31 +86,6 @@
    "reqd": 1
   },
   {
-   "default": "0",
-   "fieldname": "use_template",
-   "fieldtype": "Check",
-   "label": "Use Template"
-  },
-  {
-   "depends_on": "eval:doc.use_template == 1",
-   "fieldname": "template",
-   "fieldtype": "Link",
-   "label": "Template",
-   "options": "WhatsApp Templates"
-  },
-  {
-   "fieldname": "template_parameters",
-   "fieldtype": "Small Text",
-   "label": "Template Parameters",
-   "read_only": 1
-  },
-  {
-   "fieldname": "template_header_parameters",
-   "fieldtype": "Small Text",
-   "label": "Template Header Parameters",
-   "read_only": 1
-  },
-  {
    "fieldname": "column_break_5",
    "fieldtype": "Column Break"
   },
@@ -170,24 +138,6 @@
    "label": "Attach"
   },
   {
-   "fieldname": "whatsapp_message_templates",
-   "fieldtype": "Link",
-   "label": "WhatsApp Message Templates",
-   "options": "WhatsApp Message Templates"
-  },
-  {
-   "default": "0",
-   "fieldname": "replied",
-   "fieldtype": "Check",
-   "label": "Replied"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_forwarded",
-   "fieldtype": "Check",
-   "label": "Is Forwarded"
-  },
-  {
    "fieldname": "section_break_iyjf",
    "fieldtype": "Section Break"
   },
@@ -230,7 +180,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-10 10:27:38.826364",
+ "modified": "2026-03-11 17:01:18.779523",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Pending WhatsApp Message",

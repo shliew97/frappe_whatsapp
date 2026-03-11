@@ -8,7 +8,6 @@ import frappe.utils
 from frappe.utils.background_jobs import enqueue
 from datetime import datetime, timedelta
 
-
 @frappe.whitelist(allow_guest=True)
 def webhook():
 	"""Meta webhook."""
@@ -17,7 +16,6 @@ def webhook():
 	# post(frappe.form_dict)
 	enqueue(post, form_dict=dict(frappe.form_dict), queue="short", is_async=True)
 	return
-
 
 def get():
 	"""Get."""
@@ -256,14 +254,11 @@ def update_message_status(data):
 	if name:
 		doc = frappe.get_doc("WhatsApp Message", name)
 		if status == "failed":
-			if not doc.get("whatsapp_message_templates") and str(error_code) == "131047":
+			if not doc.get("whatsapp_message_templates") and doc.message_type != "Template" and str(error_code) == "131047":
 				fields_to_copy = [
 					"label", "type", "to", "from", "from_name", "timestamp",
-					"use_template", "template", "template_parameters",
-					"template_header_parameters", "message", "message_type",
-					"message_id", "conversation_id", "interactive_id",
-					"content_type", "attach", "whatsapp_message_templates",
-					"replied", "is_forwarded", "is_reply", "reply_to_message_id",
+					"message", "message_type", "message_id", "conversation_id", "interactive_id",
+					"content_type", "attach", "is_reply", "reply_to_message_id",
 					"reference_doctype", "reference_name"
 				]
 				pending_data = {"doctype": "Pending WhatsApp Message"}
