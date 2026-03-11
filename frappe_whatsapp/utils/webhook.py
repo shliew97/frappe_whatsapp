@@ -253,10 +253,10 @@ def update_message_status(data):
 	name = frappe.db.get_value("WhatsApp Message", filters={"message_id": id})
 	error_code = data['statuses'][0].get('errors', [{}])[0].get('code')
 
-	if str(error_code) == "131047" and name:
+	if name:
 		doc = frappe.get_doc("WhatsApp Message", name)
 		if status == "failed":
-			if not doc.get("whatsapp_message_templates"):
+			if not doc.get("whatsapp_message_templates") and str(error_code) == "131047":
 				fields_to_copy = [
 					"label", "type", "to", "from", "from_name", "timestamp",
 					"use_template", "template", "template_parameters",
