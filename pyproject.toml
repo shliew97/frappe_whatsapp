@@ -10,6 +10,10 @@ dynamic = ["version"]
 dependencies = [
     "python-magic~=0.4.24",
     "pywebpush",
+    "langchain~=0.3.0",
+    "langchain-openai~=0.2.0",
+    "langchain-pinecone~=0.2.0",
+    "langchain-core~=0.3.0",
 ]
 
 [build-system]
