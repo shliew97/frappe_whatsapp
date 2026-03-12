@@ -160,7 +160,8 @@
    "fieldname": "reference_doctype",
    "fieldtype": "Link",
    "label": "Reference DocType",
-   "options": "DocType"
+   "options": "DocType",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_efrb",
@@ -170,7 +171,8 @@
    "fieldname": "reference_name",
    "fieldtype": "Dynamic Link",
    "label": "Reference name",
-   "options": "reference_doctype"
+   "options": "reference_doctype",
+   "search_index": 1
   },
   {
    "fieldname": "expires_at",
@@ -180,7 +182,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-11 17:01:18.779523",
+ "modified": "2026-03-12 09:49:23.984464",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Pending WhatsApp Message",
