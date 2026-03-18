@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "message",
+  "booking_info_with_regex",
   "booking_info"
  ],
  "fields": [
@@ -18,12 +19,17 @@
    "fieldname": "booking_info",
    "fieldtype": "Long Text",
    "label": "Booking Info"
+  },
+  {
+   "fieldname": "booking_info_with_regex",
+   "fieldtype": "Long Text",
+   "label": "Booking info with regex"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-28 11:11:22.810375",
+ "modified": "2026-03-17 14:28:10.818877",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "Booking Log",
