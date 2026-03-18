@@ -7,6 +7,7 @@ from werkzeug.wrappers import Response
 import frappe.utils
 from frappe.utils.background_jobs import enqueue
 from datetime import datetime, timedelta
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import CHAT_CLOSING_MESSAGE
 
 @frappe.whitelist(allow_guest=True)
 def webhook():
@@ -254,7 +255,7 @@ def update_message_status(data):
 	if name:
 		doc = frappe.get_doc("WhatsApp Message", name)
 		if status == "failed":
-			if not doc.get("whatsapp_message_templates") and doc.message_type != "Template" and str(error_code) == "131047":
+			if not doc.get("whatsapp_message_templates") and doc.message_type != "Template" and str(error_code) == "131047" and doc.message != CHAT_CLOSING_MESSAGE:
 				fields_to_copy = [
 					"label", "type", "to", "from", "from_name", "timestamp",
 					"message", "message_type", "message_id", "conversation_id", "interactive_id",
