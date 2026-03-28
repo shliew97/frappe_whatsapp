@@ -109,14 +109,26 @@ def is_general_question(message):
     Returns:
         bool: True if message is a general question
     """
-    # Question patterns
+    # Question patterns - English
     question_keywords = [
         'what', 'when', 'where', 'how', 'why', 'who', 'which',
         'can you', 'could you', 'do you', 'does', 'is there', 'are there',
+        'can i ask', 'can i know', 'may i know',
         'tell me', 'explain', 'what is', 'what are', 'how much', 'how long',
+        'want to know', 'like to know', 'interested to know', 'curious',
+        'any info', 'more info', 'information',
         'price', 'cost', 'location', 'outlet', 'operating hours', 'open',
         'available', 'offer', 'provide', 'difference', 'compare',
-        'package', 'promotion', 'discount', 'membership'
+        'package', 'promotion', 'discount', 'membership',
+        'recommend', 'suggestion', 'suggest',
+        'how to book',  # asking about booking process, not actually booking
+    ]
+
+    # Question patterns - Malay
+    malay_question_keywords = [
+        'apa', 'bila', 'mana', 'macam mana', 'kenapa', 'siapa',
+        'berapa', 'ada tak', 'ada ke', 'boleh tak', 'boleh ke',
+        'nak tahu', 'nak tanya', 'tanya sikit',
     ]
 
     message_lower = message.lower().strip()
@@ -124,11 +136,12 @@ def is_general_question(message):
     # Check if it's a question
     has_question_mark = '?' in message
     has_question_word = any(keyword in message_lower for keyword in question_keywords)
+    has_malay_question = any(keyword in message_lower for keyword in malay_question_keywords)
 
     # Exclude confirmation responses (yes/no)
     is_confirmation = is_confirmation_message(message) or is_change_request(message)
 
-    return (has_question_mark or has_question_word) and not is_confirmation
+    return (has_question_mark or has_question_word or has_malay_question) and not is_confirmation
 
 
 def analyze_confirmation_response_intent(message, pending_booking_data):

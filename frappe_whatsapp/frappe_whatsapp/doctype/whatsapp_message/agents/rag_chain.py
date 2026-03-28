@@ -6,8 +6,8 @@ from crm.api.whatsapp import get_whatsapp_messages
 try:
     from langchain_openai import OpenAIEmbeddings, ChatOpenAI
     from langchain_pinecone import PineconeVectorStore
-    from langchain_classic.chains import create_retrieval_chain
-    from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+    from langchain.chains import create_retrieval_chain
+    from langchain.chains.combine_documents import create_stuff_documents_chain
     from langchain_core.prompts import ChatPromptTemplate
     LANGCHAIN_AVAILABLE = True
 except ImportError as e:
@@ -1025,6 +1025,170 @@ def format_chat_history(messages):
 
     return "\n".join(formatted_history)
 
+def classify_message_intent_with_llm(message, has_pending_booking=False):
+    """
+    Use LLM to classify the intent of a user message.
+    Determines whether the user is asking a question/inquiry, wants to make a booking,
+    or is providing booking details.
+
+    Args:
+        message: User's message text
+        has_pending_booking: Whether there's an existing pending (incomplete) booking
+
+    Returns:
+        str: 'question', 'booking', or 'other'
+    """
+    if not LANGCHAIN_AVAILABLE:
+        # Fallback to keyword-based detection
+        return _classify_intent_fallback(message)
+
+    try:
+        whatsapp_settings = frappe.get_single("WhatsApp Settings")
+        openai_key = whatsapp_settings.get_password("openai_api_key")
+
+        if not openai_key:
+            return _classify_intent_fallback(message)
+
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0,
+            openai_api_key=openai_key,
+            timeout=10,
+            max_retries=1
+        )
+
+        pending_context = ""
+        if has_pending_booking:
+            pending_context = "\n**CONTEXT**: The customer has a pending incomplete booking. However, they may still ask general questions at any time. Do NOT assume they are continuing the booking unless the message clearly provides booking details or explicitly says they want to book."
+
+        prompt = f"""You are a message intent classifier for a spa/massage booking WhatsApp chatbot (HealthLand).
+
+CUSTOMER MESSAGE: "{message}"{pending_context}
+
+Classify this message into ONE of these categories:
+
+1. **QUESTION** - The customer is asking for information, inquiring about services, prices, availability, promotions, outlets, operating hours, treatments, or anything informational. They want to LEARN something, not make a booking.
+   Examples:
+   - "What massage do you offer?"
+   - "How much is a foot massage?"
+   - "Do you have any promotions?"
+   - "What's the difference between Thai and oil massage?"
+   - "Are you open tomorrow?"
+   - "Where is your KD outlet?"
+   - "Do you have parking?"
+   - "What time do you close?"
+   - "I want to know about your packages"
+   - "Berapa harga massage?" (How much is massage?)
+   - "Ada promotion tak?" (Any promotions?)
+   - "What massage is good for back pain?"
+   - "Do you have couple massage?"
+   - "How long is the session?"
+
+2. **BOOKING** - The customer clearly wants to CREATE or START a booking. They are providing booking details or explicitly stating they want to book/reserve/schedule.
+   Examples:
+   - "I want to book a massage tomorrow"
+   - "Book me for 2 people at KD on Friday 3pm"
+   - "Nak book esok" (Want to book tomorrow)
+   - "Name: John, Outlet: KD, Date: tomorrow..."
+   - "I'd like to make a reservation"
+   - "Can I book a slot for Saturday?"
+   - Providing structured booking details (name, date, time, outlet, pax)
+
+3. **OTHER** - Greetings, acknowledgments, thank you messages, or anything that doesn't fit the above.
+   Examples:
+   - "Hi", "Hello", "Thank you", "Ok noted"
+
+IMPORTANT RULES:
+- If the message mentions treatments/services but is ASKING about them (prices, availability, info), classify as QUESTION
+- If the message mentions a date/time but is ASKING about availability (not requesting a booking), classify as QUESTION
+- Only classify as BOOKING if the customer clearly wants to MAKE a booking, not just asking about booking process
+- "How to book?" or "How do I book?" = QUESTION (asking about the process)
+- "I want to book" or "Can I book for tomorrow?" = BOOKING (requesting a booking)
+- When in doubt between QUESTION and BOOKING, prefer QUESTION — it's better to answer a question than to wrongly start a booking flow
+
+OUTPUT: Reply with ONLY one word: QUESTION, BOOKING, or OTHER"""
+
+        response = llm.invoke(prompt)
+        result = response.content.strip().upper()
+
+        # Normalize
+        if result == 'QUESTION':
+            intent = 'question'
+        elif result == 'BOOKING':
+            intent = 'booking'
+        else:
+            intent = 'other'
+
+        frappe.log_error(
+            "LLM Intent Classification",
+            f"Message: {message}\n"
+            f"Has pending booking: {has_pending_booking}\n"
+            f"LLM classified as: {intent}"
+        )
+
+        return intent
+
+    except Exception as e:
+        frappe.log_error(
+            "Intent Classification Error",
+            f"Error classifying intent with LLM: {str(e)}\n{frappe.get_traceback()}"
+        )
+        return _classify_intent_fallback(message)
+
+
+def _classify_intent_fallback(message):
+    """
+    Fallback keyword-based intent classification when LLM is unavailable.
+    """
+    message_lower = message.lower().strip()
+
+    # Check for explicit booking keywords first
+    if has_explicit_booking_intent(message):
+        return 'booking'
+
+    # Check for question patterns
+    question_indicators = [
+        '?', 'what', 'when', 'where', 'how', 'why', 'who', 'which',
+        'do you', 'can you', 'is there', 'are there', 'tell me',
+        'how much', 'how long', 'price', 'cost', 'available',
+        'apa', 'berapa', 'bila', 'mana', 'ada tak',
+    ]
+    if any(q in message_lower for q in question_indicators):
+        return 'question'
+
+    # Check for implied booking (treatment + date/time)
+    if has_booking_intent(message):
+        return 'booking'
+
+    return 'other'
+
+
+def has_explicit_booking_intent(message):
+    """
+    Check if a message has EXPLICIT booking intent using clear booking phrases.
+    This is stricter than has_booking_intent() and is used as a quick keyword check.
+
+    Args:
+        message: The message text to check
+
+    Returns:
+        bool: True if message has explicit booking phrases
+    """
+    booking_intent_keywords = [
+        'want to book', 'want book', 'wanna book', 'would like to book',
+        'need to book', 'need book', 'make a booking', 'make booking',
+        'book appointment', 'book a slot', 'book slot',
+        'can i book', 'can book',
+        'make appointment', 'make an appointment',
+        'reserve', 'reservation', 'schedule', 'schedule appointment',
+        'nak book', 'nak booking', 'nk book', 'nk booking',
+        'boleh book', 'boleh booking',
+    ]
+
+    message_lower = message.lower()
+    return any(keyword in message_lower for keyword in booking_intent_keywords)
+
+
 def has_booking_intent(message):
     """
     Check if a message expresses booking intent.
@@ -1036,20 +1200,11 @@ def has_booking_intent(message):
     Returns:
         bool: True if message expresses booking intent
     """
-    booking_intent_keywords = [
-        'want to book', 'want book', 'wanna book', 'would like to book',
-        'need to book', 'need book', 'make a booking', 'make booking',
-        'book appointment', 'book a slot', 'book slot',
-        'can i book', 'can book', 'how to book', 'how do i book',
-        'make appointment', 'make an appointment',
-        'reserve', 'reservation', 'schedule', 'schedule appointment'
-    ]
+    # Check for explicit booking keywords first
+    if has_explicit_booking_intent(message):
+        return True
 
     message_lower = message.lower()
-
-    # Check for explicit booking keywords
-    if any(keyword in message_lower for keyword in booking_intent_keywords):
-        return True
 
     # Check for IMPLIED booking intent: treatment type + date/time
     # Examples: "I want a foot massage tomorrow", "Need Thai massage on Friday"
@@ -1596,7 +1751,7 @@ def detect_update_intent_with_llm(chat_history, current_message, existing_bookin
 
         # Create LLM instance
         llm = ChatOpenAI(
-            model="gpt-5-chat-latest",
+            model="gpt-5.4-mini",
             temperature=0,
             openai_api_key=openai_key,
             timeout=30,
