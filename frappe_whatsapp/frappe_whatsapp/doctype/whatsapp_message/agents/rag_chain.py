@@ -1545,7 +1545,7 @@ IMPORTANT INSTRUCTIONS:
 - If a field is mentioned anywhere in the conversation and not in existing data, extract it
 - If existing data already has a value for a field, keep it unless the customer explicitly changes it in the current message
 - For outlet names, map common variations (e.g., "KD" → "HealthLand KD", "Puchong" → "HealthLand Puchong")
-- For dates, convert relative dates (today, tomorrow, day after tomorrow) to YYYY-MM-DD format
+- CRITICAL FOR DATES: Today's date is {datetime.now().strftime('%Y-%m-%d')}. ALL relative dates ("tomorrow", "today", "next Monday", "this Friday", etc.) MUST be calculated relative to TODAY'S date, NOT relative to any existing booking date. For example, if today is 2026-03-28, "tomorrow" = 2026-03-29. Convert to YYYY-MM-DD format.
 - For times, convert to 24-hour HH:MM:SS format (e.g., "2pm" → "14:00:00", "2:30pm" → "14:30:00")
 - For duration, extract only the number of minutes (60, 90, or 120)
 - For pax, treatment_type, and session: return null if not explicitly mentioned (defaults will be applied automatically)
@@ -1788,9 +1788,10 @@ KEYWORDS FOR NEW BOOKING:
 IMPORTANT INSTRUCTIONS:
 - If there's NO existing booking and the customer uses update/change language, they likely mean to correct their current NEW booking details (treat as new booking, not update)
 - If there IS an existing confirmed booking and customer says "change", "update", "reschedule" → it's an UPDATE
+- If the customer says things like "change to tomorrow", "move to next week", "can I change to Saturday" — these are UPDATE requests for the date, even if they don't explicitly say "date" or "booking date"
 - Look for context clues: "I already booked...", "my booking for...", "the appointment I made..."
 - Extract ONLY the fields the customer wants to change in their update request
-- For dates: convert relative dates to YYYY-MM-DD format (today is {datetime.now().strftime('%Y-%m-%d')})
+- CRITICAL FOR DATES: Today's date is {datetime.now().strftime('%Y-%m-%d')}. ALL relative date words ("tomorrow", "today", "next Monday", "this Friday", "next week", etc.) MUST be calculated relative to TODAY'S date ({datetime.now().strftime('%Y-%m-%d')}), NOT relative to the existing booking date. For example, if today is 2026-03-28 and the booking is on 2026-04-06, "tomorrow" means 2026-03-29 (today + 1), NOT 2026-04-07 (booking + 1). Convert all dates to YYYY-MM-DD format.
 - For times: convert to 24-hour HH:MM:SS format
 
 OUTPUT FORMAT (JSON only, no other text):

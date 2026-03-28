@@ -1,4 +1,5 @@
 import frappe
+from datetime import datetime
 
 def is_confirmation_message(message, context=None):
     """
@@ -201,6 +202,8 @@ IMPORTANT RULES:
 - If the message contains specific field values to update, classify as UPDATE_FIELDS
 - Only classify as WANTS_TO_CHANGE if the user is rejecting without providing new field information
 - For UPDATE_FIELDS, extract all field updates mentioned
+- CRITICAL FOR DATES: Today's date is {datetime.now().strftime('%Y-%m-%d')}. ALL relative date words ("tomorrow", "today", "next Monday", "this Friday", etc.) MUST be calculated relative to TODAY'S date, NOT relative to the existing booking date. For example, if today is 2026-03-28, "tomorrow" means 2026-03-29. Convert dates to YYYY-MM-DD format.
+- For times: convert to 24-hour HH:MM:SS format (e.g., "2pm" → "14:00:00")
 
 AVAILABLE FIELDS YOU CAN UPDATE:
 - customer_name: Customer's name

@@ -1246,7 +1246,13 @@ Thank you for updating your booking with HealthLand! 💚"""
 - Duration: {selected_booking.get('session')} mins
 - Therapist: {selected_booking.get('preferred_therapist')}
 
-What would you like to change? Please let me know! 😊"""
+What would you like to change? Just tell me in your own words! 😊
+
+For example:
+• _"Change date to 5th April"_
+• _"Change time to 3pm"_
+• _"Change outlet to Puchong"_
+• _"Change to tomorrow at 2pm"_"""
 
                         enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=booking_summary, queue="short", is_async=True)
                         return
@@ -1424,7 +1430,13 @@ Is this correct? Please reply:
 - Duration: {booking.get('session')} mins
 - Therapist: {booking.get('preferred_therapist')}
 
-What would you like to change? Please let me know! 😊"""
+What would you like to change? Just tell me in your own words! 😊
+
+For example:
+• _"Change date to 5th April"_
+• _"Change time to 3pm"_
+• _"Change outlet to Puchong"_
+• _"Change to tomorrow at 2pm"_"""
 
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=current_booking_summary, queue="short", is_async=True)
                     return
