@@ -9,7 +9,7 @@ import random
 import datetime
 import time
 import hashlib
-from crm.api.whatsapp import get_lead_or_deal_from_number
+from crm.api.whatsapp import get_lead_or_deal_from_number, create_booking, edit_booking
 import requests
 from frappe.utils.background_jobs import enqueue
 from frappe.core.doctype.file.utils import find_file_by_url
@@ -40,7 +40,6 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.handle_api_calls i
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.ai_utils import (
     is_confirmation_message,
     is_change_request,
-    is_general_question,
     analyze_confirmation_response_intent,
 )
 
@@ -1006,7 +1005,15 @@ def handle_text_message_ai(message, whatsapp_id, customer_name, crm_lead_doc=Non
         # respond politely without repeating booking details
         booking_was_confirmed = pending_data.get('confirmed', False) if pending_data else False
 
-        if booking_was_confirmed:
+        # Skip acknowledgment check if we're waiting for a booking selection or update confirmation
+        is_awaiting_action = pending_data and (
+            pending_data.get('awaiting_edit_booking_selection') or
+            pending_data.get('awaiting_update_confirmation') or
+            pending_data.get('awaiting_slot_selection') or
+            pending_data.get('awaiting_confirmation')
+        )
+
+        if booking_was_confirmed and not is_awaiting_action:
             # Use LLM to detect if this is a simple acknowledgment
             from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import detect_yes_no_with_llm
             detection_result = detect_yes_no_with_llm(message)
@@ -1083,10 +1090,13 @@ If you'd like to make a new booking in the future, just let us know! 💚"""
 
             # FIRST: Check if user is asking a general question instead of confirming
             # This allows flexible conversation even while waiting for update confirmation
-            if is_general_question(message):
+            from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import classify_message_intent_with_llm
+            update_msg_intent = classify_message_intent_with_llm(message, has_pending_booking=True)
+
+            if update_msg_intent == 'question':
                 frappe.log_error(
                     "General Question During Update Confirmation",
-                    f"User asked a question while awaiting update confirmation\n"
+                    f"LLM classified as question while awaiting update confirmation\n"
                     f"Message: {message}\n"
                     f"Keeping awaiting_update_confirmation=True and answering question via RAG"
                 )
@@ -1105,14 +1115,40 @@ If you'd like to make a new booking in the future, just let us know! 💚"""
                     updated_booking = pending_data.copy()
                     updated_booking.update(pending_update_fields)
 
-                    # Call mock update API
-                    update_response = handle_update_booking_api_mock(
-                        crm_lead_doc,
-                        whatsapp_id,
-                        updated_booking,
-                        booking_reference
+                    # Map field names to match edit_booking expected fields
+                    edit_booking_details = {
+                        "booking_date": updated_booking.get("booking_date"),
+                        "timeslot": updated_booking.get("timeslot"),
+                        "treatment": updated_booking.get("treatment_type") or updated_booking.get("treatment"),
+                        "session": updated_booking.get("session"),
+                        "preferred_therapist": updated_booking.get("preferred_masseur") or updated_booking.get("preferred_therapist"),
+                        "third_party_voucher": updated_booking.get("third_party_voucher"),
+                        "package": updated_booking.get("using_package") or updated_booking.get("package"),
+                    }
+
+                    # Call edit_booking API
+                    order_ids = pending_data.get('order_ids') or booking_reference
+                    frappe.log_error(
+                        "edit_booking API Call",
+                        f"order_ids: {order_ids}\n"
+                        f"edit_booking_details: {json.dumps(edit_booking_details, indent=2, default=str)}"
                     )
-                    frappe.log_error("Update API Response", f"Mock API response: {json.dumps(update_response, default=str)}")
+                    update_response = edit_booking(
+                        order_ids=order_ids,
+                        booking_details=edit_booking_details,
+                    )
+                    frappe.log_error("Update API Response", f"edit_booking response: {json.dumps(update_response, default=str)}")
+
+                    # Handle failed update
+                    if update_response and update_response.get("success") == False:
+                        error_message = update_response.get("message", "Booking could not be updated.")
+                        error_msg = f"❌ {error_message}\n\nPlease try a different date/time or contact our outlet directly."
+                        pending_data['awaiting_update_confirmation'] = False
+                        if 'pending_update_fields' in pending_data:
+                            del pending_data['pending_update_fields']
+                        save_pending_booking_data(crm_lead_doc, pending_data)
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
+                        return
 
                     # Save updated booking data
                     updated_booking['confirmed'] = True
@@ -1122,20 +1158,15 @@ If you'd like to make a new booking in the future, just let us know! 💚"""
                     save_pending_booking_data(crm_lead_doc, updated_booking)
 
                     # Build success message
-                    update_type_label = 'Updated'
-                    update_summary = f"""✅ Booking {update_type_label} Successfully!
+                    update_summary = f"""✅ Booking Updated Successfully!
 
 📋 Updated Booking Details:
-- Booking Reference: {booking_reference or 'N/A'}
-- Name: {updated_booking.get('customer_name')}
-- Phone: {updated_booking.get('phone')}
 - Outlet: {updated_booking.get('outlet')}
 - Date: {updated_booking.get('booking_date')}
 - Time: {updated_booking.get('timeslot')}
-- Pax: {updated_booking.get('pax')}
-- Treatment: {updated_booking.get('treatment_type')}
+- Treatment: {edit_booking_details.get('treatment')}
 - Duration: {updated_booking.get('session')} minutes
-- Preferred Masseur: {updated_booking.get('preferred_masseur')}
+- Preferred Therapist: {edit_booking_details.get('preferred_therapist')}
 
 Thank you for updating your booking with HealthLand! 💚"""
 
@@ -1168,58 +1199,88 @@ Thank you for updating your booking with HealthLand! 💚"""
                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=reminder_msg, queue="short", is_async=True)
                 return
 
-        if booking_was_confirmed:
-            update_detection = detect_update_intent_with_llm(chat_history, message, pending_data)
+        # Check if user is selecting a booking to edit (from previously shown list)
+        if pending_data and pending_data.get('awaiting_edit_booking_selection'):
+            fetched_bookings_map = pending_data.get('fetched_bookings_map', {})
+            if fetched_bookings_map:
+                number_match = re.search(r'\d+', message.strip())
+                if number_match:
+                    selected_key = number_match.group()
+                    if selected_key in fetched_bookings_map:
+                        selected_booking = fetched_bookings_map[selected_key]
+                        frappe.log_error("Edit Booking Selected", f"User selected booking #{selected_key}: {json.dumps(selected_booking, default=str)}")
 
-            if update_detection['is_update']:
-                # User wants to update their existing booking
-                frappe.log_error(
-                    "Booking Update",
-                    f"User wants to update booking for {whatsapp_id}\n"
-                    f"Update type: {update_detection['update_type']}\n"
-                    f"Updated fields: {json.dumps(update_detection['updated_fields'], indent=2, default=str)}"
-                )
+                        # Save the selected booking as the active pending data for editing
+                        edit_data = {
+                            'customer_name': selected_booking.get('customer_name'),
+                            'phone': selected_booking.get('member_mobile') or selected_booking.get('booking_mobile'),
+                            'outlet': selected_booking.get('outlet'),
+                            'booking_date': selected_booking.get('booking_date'),
+                            'timeslot': selected_booking.get('timeslot'),
+                            'pax': selected_booking.get('pax'),
+                            'treatment_type': selected_booking.get('treatment'),
+                            'session': selected_booking.get('session'),
+                            'preferred_masseur': selected_booking.get('preferred_therapist'),
+                            'third_party_voucher': selected_booking.get('third_party_voucher'),
+                            'using_package': selected_booking.get('package'),
+                            'booking_reference': selected_booking.get('booking_id') or selected_booking.get('order_ids'),
+                            'order_ids': selected_booking.get('order_ids', []),
+                            'confirmed': True,
+                        }
+                        save_pending_booking_data(crm_lead_doc, edit_data)
 
-                # Check if user specified WHAT to update
-                updated_fields = update_detection.get('updated_fields', {})
+                        # Ask what they want to change
+                        # Format timeslot for display
+                        try:
+                            from datetime import datetime as dt
+                            t = dt.strptime(str(selected_booking.get('timeslot', '')), "%H:%M:%S")
+                            time_display = t.strftime("%-I:%M%p").lower()
+                        except Exception:
+                            time_display = selected_booking.get('timeslot', '')
 
-                if not updated_fields or len(updated_fields) == 0:
-                    # User wants to update but didn't specify what to change
-                    # Ask them what they want to update
-                    frappe.log_error(
-                        "Update Request - No Fields Specified",
-                        f"User said they want to update but didn't specify which fields\n"
-                        f"Asking user what they want to update"
-                    )
+                        booking_summary = f"""📋 Selected Booking:
+- Outlet: {selected_booking.get('outlet')}
+- Date: {selected_booking.get('booking_date')}
+- Time: {time_display}
+- Treatment: {selected_booking.get('treatment')}
+- Duration: {selected_booking.get('session')} mins
+- Therapist: {selected_booking.get('preferred_therapist')}
 
-                    current_booking_summary = f"""Sure! I can help you update your booking.
+What would you like to change? Just tell me in your own words! 😊
 
-📋 Your Current Booking:
-- Booking Reference: {pending_data.get('booking_reference', 'N/A')}
-- Name: {pending_data.get('customer_name')}
-- Phone: {pending_data.get('phone')}
-- Outlet: {pending_data.get('outlet')}
-- Date: {pending_data.get('booking_date')}
-- Time: {pending_data.get('timeslot')}
-- Pax: {pending_data.get('pax')}
-- Treatment: {pending_data.get('treatment_type')}
-- Duration: {pending_data.get('session')} minutes
-- Preferred Masseur: {pending_data.get('preferred_masseur')}
+For example:
+• _"Change date to 5th April"_
+• _"Change time to 3pm"_
+• _"Change outlet to Puchong"_
+• _"Change to tomorrow at 2pm"_"""
 
-What would you like to change? You can update:
-• Date and/or Time
-• Number of people (Pax)
-• Treatment type
-• Duration
-• Masseur preference
-• Outlet location
-• Or any other detail
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=booking_summary, queue="short", is_async=True)
+                        return
 
-Please let me know what you'd like to update! 😊"""
+                # User didn't pick a valid number
+                reminder_msg = "Please reply with the *number* of the booking you'd like to edit (e.g. *1*, *2*, *3*...) 🙏"
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=reminder_msg, queue="short", is_async=True)
+                return
 
-                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=current_booking_summary, queue="short", is_async=True)
-                    return
+        # Detect update intent - check even without local confirmed booking data
+        # so that fetch_bookings can retrieve actual future bookings from the API
+        update_detection = detect_update_intent_with_llm(chat_history, message, pending_data)
 
+        if update_detection['is_update']:
+            # User wants to update their existing booking
+            updated_fields = update_detection.get('updated_fields', {})
+
+            frappe.log_error(
+                "Booking Update",
+                f"User wants to update booking for {whatsapp_id}\n"
+                f"Update type: {update_detection['update_type']}\n"
+                f"Updated fields: {json.dumps(updated_fields, indent=2, default=str)}\n"
+                f"booking_was_confirmed: {booking_was_confirmed}"
+            )
+
+            # If user already has a confirmed booking selected and provided specific fields,
+            # proceed with the update confirmation instead of fetching bookings again
+            if booking_was_confirmed and updated_fields:
                 try:
                     # Merge existing booking with updated fields
                     updated_booking = pending_data.copy()
@@ -1230,21 +1291,17 @@ Please let me know what you'd like to update! 😊"""
                         timeslot_validation = validate_booking_timeslot(updated_booking.get('timeslot'))
 
                         if not timeslot_validation['valid']:
-                            # Timeslot is outside operating hours - inform customer
                             frappe.log_error(
                                 "Invalid Update Time",
                                 f"Customer tried to update booking to {updated_booking.get('timeslot')} which is outside operating hours\n"
                                 f"Sending message: {timeslot_validation['message']}"
                             )
-
-                            # Send the validation error message
                             enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=timeslot_validation['message'], queue="short", is_async=True)
                             return
 
                     # Get booking reference
                     booking_reference = pending_data.get('booking_reference')
 
-                    # Show confirmation of the UPDATE before calling API
                     # Build list of what changed
                     changes_list = []
                     for field, new_value in updated_fields.items():
@@ -1271,16 +1328,12 @@ Please let me know what you'd like to update! 😊"""
 {changes_summary}
 
 📋 Updated Booking Details:
-- Booking Reference: {booking_reference or 'N/A'}
-- Name: {updated_booking.get('customer_name')}
-- Phone: {updated_booking.get('phone')}
 - Outlet: {updated_booking.get('outlet')}
 - Date: {updated_booking.get('booking_date')}
 - Time: {updated_booking.get('timeslot')}
-- Pax: {updated_booking.get('pax')}
 - Treatment: {updated_booking.get('treatment_type')}
 - Duration: {updated_booking.get('session')} minutes
-- Preferred Masseur: {updated_booking.get('preferred_masseur')}
+- Preferred Therapist: {updated_booking.get('preferred_masseur')}
 
 Is this correct? Please reply:
 ✅ *Yes* to confirm update
@@ -1307,35 +1360,311 @@ Is this correct? Please reply:
                     enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
                     return
 
-        # PRIORITY 3: Normal booking flow (new bookings)
-        # Check if we should trigger booking flow:
-        # 1. User expresses booking intent in LAST 3 MESSAGES (e.g., "I want to book")
-        # 2. Message contains specific booking details
-        # 3. We have pending booking data from previous interaction
-        # 4. IMPORTANT: Allow users to ask general questions even with pending booking data
+            # No active booking selected yet — fetch all future bookings from API
+            frappe.log_error(
+                "Update Request - Fetching Bookings",
+                f"User wants to update booking. Fetching bookings for {whatsapp_id}"
+            )
 
-        # Use new intent detection that only checks last 3 messages to avoid false positives
-        user_wants_to_book = detect_booking_intent_from_recent_context(chat_history, message)
+            try:
+                from crm.api.whatsapp import fetch_bookings
+                bookings_response = fetch_bookings(whatsapp_id)
+                all_bookings = bookings_response.get('bookings', []) if bookings_response else []
+
+                # Filter for future bookings only
+                from datetime import datetime as dt
+                today_str = frappe.utils.today()
+                future_bookings = []
+                for b in all_bookings:
+                    booking_date = b.get('booking_date', '')
+                    if booking_date and str(booking_date) >= today_str:
+                        future_bookings.append(b)
+
+                frappe.log_error(
+                    "Fetched Bookings",
+                    f"Total bookings: {len(all_bookings)}, Future bookings: {len(future_bookings)}\n"
+                    f"Bookings: {json.dumps(future_bookings, indent=2, default=str)}"
+                )
+
+                if not future_bookings:
+                    no_booking_msg = "You don't have any upcoming bookings to update. Would you like to make a new booking instead? 😊"
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=no_booking_msg, queue="short", is_async=True)
+                    return
+
+                if len(future_bookings) == 1:
+                    # Only one future booking — show it directly and ask what to change
+                    booking = future_bookings[0]
+
+                    # Save this booking as the active pending data for editing
+                    edit_data = {
+                        'customer_name': booking.get('customer_name'),
+                        'phone': booking.get('member_mobile') or booking.get('booking_mobile'),
+                        'outlet': booking.get('outlet'),
+                        'booking_date': booking.get('booking_date'),
+                        'timeslot': booking.get('timeslot'),
+                        'pax': booking.get('pax'),
+                        'treatment_type': booking.get('treatment'),
+                        'session': booking.get('session'),
+                        'preferred_masseur': booking.get('preferred_therapist'),
+                        'third_party_voucher': booking.get('third_party_voucher'),
+                        'using_package': booking.get('package'),
+                        'booking_reference': booking.get('booking_id') or booking.get('order_ids'),
+                        'order_ids': booking.get('order_ids', []),
+                        'confirmed': True,
+                    }
+                    save_pending_booking_data(crm_lead_doc, edit_data)
+
+                    try:
+                        t = dt.strptime(str(booking.get('timeslot', '')), "%H:%M:%S")
+                        time_display = t.strftime("%-I:%M%p").lower()
+                    except Exception:
+                        time_display = booking.get('timeslot', '')
+
+                    current_booking_summary = f"""Sure! I can help you update your booking.
+
+📋 Your Upcoming Booking:
+- Outlet: {booking.get('outlet')}
+- Date: {booking.get('booking_date')}
+- Time: {time_display}
+- Treatment: {booking.get('treatment')}
+- Duration: {booking.get('session')} mins
+- Therapist: {booking.get('preferred_therapist')}
+
+What would you like to change? Just tell me in your own words! 😊
+
+For example:
+• _"Change date to 5th April"_
+• _"Change time to 3pm"_
+• _"Change outlet to Puchong"_
+• _"Change to tomorrow at 2pm"_"""
+
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=current_booking_summary, queue="short", is_async=True)
+                    return
+
+                else:
+                    # Multiple future bookings — show numbered list for user to pick
+                    number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
+                    bookings_msg = "Sure! I can help you update your booking.\n\nYou have multiple upcoming bookings. Which one would you like to edit?\n"
+                    fetched_bookings_map = {}
+
+                    for idx, booking in enumerate(future_bookings):
+                        if idx >= len(number_emojis):
+                            break
+                        num = idx + 1
+
+                        try:
+                            t = dt.strptime(str(booking.get('timeslot', '')), "%H:%M:%S")
+                            time_display = t.strftime("%-I:%M%p").lower()
+                        except Exception:
+                            time_display = booking.get('timeslot', '')
+
+                        bookings_msg += f"\n{number_emojis[idx]}  📍 *{booking.get('outlet')}*\n"
+                        bookings_msg += f"     📅 {booking.get('booking_date')} at {time_display}\n"
+                        bookings_msg += f"     💆 {booking.get('treatment')} ({booking.get('session')} mins) | 👥 {booking.get('pax')} pax\n"
+
+                        fetched_bookings_map[str(num)] = booking
+
+                    bookings_msg += "\n*Reply with the number* of the booking you'd like to edit (e.g. *1*, *2*, *3*...)"
+
+                    # Save state so we can handle the selection
+                    selection_data = pending_data.copy() if pending_data else {}
+                    selection_data['awaiting_edit_booking_selection'] = True
+                    selection_data['fetched_bookings_map'] = fetched_bookings_map
+                    save_pending_booking_data(crm_lead_doc, selection_data)
+
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=bookings_msg, queue="short", is_async=True)
+                    return
+
+            except Exception as fetch_error:
+                frappe.log_error(
+                    "Fetch Bookings Error",
+                    f"Error fetching bookings for update: {str(fetch_error)}\n{frappe.get_traceback()}"
+                )
+                # Fallback to showing pending_data if fetch fails
+                current_booking_summary = f"""Sure! I can help you update your booking.
+
+📋 Your Current Booking:
+- Booking Reference: {pending_data.get('booking_reference', 'N/A') if pending_data else 'N/A'}
+- Name: {pending_data.get('customer_name') if pending_data else 'N/A'}
+- Phone: {pending_data.get('phone') if pending_data else 'N/A'}
+- Outlet: {pending_data.get('outlet') if pending_data else 'N/A'}
+- Date: {pending_data.get('booking_date') if pending_data else 'N/A'}
+- Time: {pending_data.get('timeslot') if pending_data else 'N/A'}
+- Pax: {pending_data.get('pax') if pending_data else 'N/A'}
+- Treatment: {pending_data.get('treatment_type') if pending_data else 'N/A'}
+- Duration: {pending_data.get('session') if pending_data else 'N/A'} minutes
+- Preferred Masseur: {pending_data.get('preferred_masseur') if pending_data else 'N/A'}
+
+What would you like to change? You can update:
+• Date and/or Time
+• Number of people (Pax)
+• Treatment type
+• Duration
+• Masseur preference
+• Outlet location
+• Or any other detail
+
+Please let me know what you'd like to update! 😊"""
+
+                enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=current_booking_summary, queue="short", is_async=True)
+                return
+
+        # PRIORITY 2.5: Slot selection flow (when booking failed and suggested slots were offered)
+        if pending_data and pending_data.get('awaiting_slot_selection'):
+            message_lower = message.lower().strip()
+
+            # Detect which slot the customer chose (numbered slots)
+            selected_slot = None
+            slot_label = None
+            numbered_slots = pending_data.get('numbered_slots', {})
+
+            if numbered_slots:
+                # Extract the number from the message (e.g. "1", "slot 3", "option 2")
+                number_match = re.search(r'\d+', message_lower)
+                if number_match:
+                    slot_key = number_match.group()
+                    if slot_key in numbered_slots:
+                        selected_slot = numbered_slots[slot_key]
+                        slot_label = f"Slot {slot_key}"
+
+            # Fallback to legacy suggested_slot_1/suggested_slot_2 format
+            if not selected_slot:
+                if any(kw in message_lower for kw in ['slot 1', 'option 1', 'first']):
+                    selected_slot = pending_data.get('suggested_slot_1')
+                    slot_label = "Slot 1"
+                elif any(kw in message_lower for kw in ['slot 2', 'option 2', 'second']):
+                    selected_slot = pending_data.get('suggested_slot_2')
+                    slot_label = "Slot 2"
+
+            if selected_slot:
+                frappe.log_error(
+                    "Slot Selection",
+                    f"Customer chose {slot_label}: {json.dumps(selected_slot, default=str)}"
+                )
+
+                try:
+                    # Convert outlet shop_full_name to branch_code for the API
+                    outlet_name = selected_slot.get("outlet", pending_data.get("outlet"))
+                    outlet_branch_code = frappe.db.get_value("Outlet", {"shop_full_name": outlet_name}, "branch_code") or outlet_name
+
+                    # Build booking details from the selected slot
+                    raw_voucher = selected_slot.get("third_party_voucher", pending_data.get("_third_party_voucher", pending_data.get("third_party_voucher", "no")))
+                    raw_package = selected_slot.get("package", pending_data.get("_package", pending_data.get("using_package", "no")))
+
+                    slot_booking_details = {
+                        "customer_name": pending_data.get("customer_name"),
+                        "booking_mobile": whatsapp_id,
+                        "member_mobile": selected_slot.get("member_mobile", pending_data.get("_member_mobile", pending_data.get("phone"))),
+                        "outlet": outlet_branch_code,
+                        "booking_date": selected_slot.get("booking_date", pending_data.get("booking_date")),
+                        "timeslot": selected_slot.get("timeslot", pending_data.get("timeslot")),
+                        "pax": selected_slot.get("pax", pending_data.get("_pax", pending_data.get("pax"))),
+                        "treatment": selected_slot.get("treatment", pending_data.get("_treatment", pending_data.get("treatment_type"))),
+                        "session": selected_slot.get("session", pending_data.get("_session", pending_data.get("session"))),
+                        "preferred_therapist": selected_slot.get("preferred_therapist", pending_data.get("_preferred_therapist", pending_data.get("preferred_masseur"))),
+                        "third_party_voucher": str(raw_voucher).lower() not in ("no", "false", "0", ""),
+                        "package": str(raw_package).lower() not in ("no", "false", "0", ""),
+                    }
+
+                    print("=== DEBUG create_booking (slot selection) ===")
+                    print(f"crm_lead={crm_lead_doc.name}")
+                    print(f"booking_details={json.dumps(slot_booking_details, default=str)}")
+                    print(f"message={message}")
+                    print("=== END DEBUG ===")
+
+                    api_response = create_booking(
+                        crm_lead=crm_lead_doc.name,
+                        booking_details=json.dumps(slot_booking_details, default=str),
+                        message=message,
+                        booking_info_with_regex=json.dumps(slot_booking_details, default=str),
+                        booking_info=json.dumps(slot_booking_details, default=str),
+                    )
+
+                    if api_response and api_response.get("success") == False:
+                        error_message = api_response.get("message", "Booking could not be completed.")
+                        error_msg = f"❌ {error_message}\n\nPlease try a different date/time or contact our outlet directly."
+                        # Clear slot selection state
+                        pending_data['awaiting_slot_selection'] = False
+                        save_pending_booking_data(crm_lead_doc, pending_data)
+                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
+                        return
+
+                    # Success - get booking reference
+                    booking_reference = api_response.get('booking_reference') or api_response.get('data', {}).get('booking_reference', f"BKG{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}")
+
+                    # Save confirmed booking data
+                    confirmed_data = pending_data.copy()
+                    confirmed_data['confirmed'] = True
+                    confirmed_data['booking_reference'] = booking_reference
+                    confirmed_data['confirmed_at'] = frappe.utils.now_datetime().isoformat()
+                    confirmed_data['awaiting_slot_selection'] = False
+                    confirmed_data['booking_date'] = slot_booking_details.get('booking_date')
+                    confirmed_data['timeslot'] = slot_booking_details.get('timeslot')
+                    # Remove temporary slot data
+                    for key in ['suggested_slot_1', 'suggested_slot_2', 'numbered_slots', '_member_mobile', '_pax', '_treatment', '_session', '_preferred_therapist', '_third_party_voucher', '_package']:
+                        confirmed_data.pop(key, None)
+                    save_pending_booking_data(crm_lead_doc, confirmed_data)
+
+                    # Use confirmation_message from API if available, otherwise build our own
+                    confirmation_msg = api_response.get('confirmation_message', '') if api_response else ''
+                    if not confirmation_msg:
+                        confirmation_msg = (
+                            f"✅ Booking confirmed!\n\n"
+                            f"📋 Booking Reference: {booking_reference}\n"
+                            f"- Name: {pending_data.get('customer_name')}\n"
+                            f"- Date: {slot_booking_details.get('booking_date')}\n"
+                            f"- Time: {slot_booking_details.get('timeslot')}\n"
+                            f"- Treatment: {pending_data.get('treatment_type')}\n"
+                            f"- Duration: {pending_data.get('session')} minutes\n"
+                            f"- Pax: {slot_booking_details.get('pax')}\n\n"
+                            f"Thank you for choosing HealthLand! 💚"
+                        )
+
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=str(confirmation_msg), queue="short", is_async=True)
+                    return
+
+                except Exception as slot_error:
+                    frappe.log_error(
+                        "Slot Selection Booking Error",
+                        f"Error booking selected slot: {str(slot_error)}\n{frappe.get_traceback()}"
+                    )
+                    clear_pending_booking_data(crm_lead_doc)
+                    error_msg = "❌ Sorry, there was an error processing your booking. Please contact our outlet directly or try again later. Thank you for your patience! 🙏"
+                    enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
+                    return
+
+        # PRIORITY 3: Normal booking flow (new bookings)
+        # Use LLM to classify message intent - much smarter than keyword matching
+        from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.agents.rag_chain import classify_message_intent_with_llm
+
         has_specific_details = is_booking_details_message(message)
         has_pending_data = bool(pending_data and len(pending_data) > 0 and not booking_was_confirmed)
-        is_asking_question = is_general_question(message)
+
+        # Use AI to classify intent - this replaces keyword-based is_general_question + has_booking_intent
+        llm_intent = classify_message_intent_with_llm(message, has_pending_booking=has_pending_data)
+
+        # Also check recent context for booking intent (last 3 messages)
+        user_wants_to_book = llm_intent == 'booking' or detect_booking_intent_from_recent_context(chat_history, message)
+        is_asking_question = llm_intent == 'question'
 
         frappe.log_error(
             "Booking Flow Debug",
-            f"Booking triggers - Intent (last 3 msgs): {user_wants_to_book}, Details: {has_specific_details}, Pending: {has_pending_data}, Question: {is_asking_question}"
+            f"Booking triggers - LLM intent: {llm_intent}, Intent (last 3 msgs): {user_wants_to_book}, "
+            f"Details: {has_specific_details}, Pending: {has_pending_data}, Question: {is_asking_question}"
         )
 
-        # If user is asking a general question, skip booking flow and let RAG handle it
-        if is_asking_question and not user_wants_to_book and not has_specific_details:
+        # If LLM classified as question, skip booking flow and let RAG handle it
+        # Only override if message has structured booking details (e.g., filled form)
+        if is_asking_question and not has_specific_details:
             frappe.log_error(
-                "General Question Detected",
-                f"User is asking a general question while in booking flow\n"
+                "General Question Detected (LLM)",
+                f"LLM classified message as question\n"
                 f"Message: {message}\n"
                 f"Skipping booking flow, letting RAG chain handle it"
             )
             # DON'T trigger booking flow - fall through to RAG chain below
 
-        # Trigger booking flow if ANY of the above conditions are met (and not asking general question)
+        # Trigger booking flow if user wants to book, has specific details, or has pending data
         elif user_wants_to_book or has_specific_details or has_pending_data:
             print("Booking flow triggered - extracting from conversation history", "WhatsApp AI Debug")
 
@@ -1425,10 +1754,11 @@ Is this correct? Please reply:
 
                 # FIRST: Check if user is asking a general question instead of confirming
                 # This allows flexible conversation even while waiting for confirmation
-                if is_general_question(message) and awaiting_confirmation:
+                confirm_msg_intent = classify_message_intent_with_llm(message, has_pending_booking=True)
+                if confirm_msg_intent == 'question' and awaiting_confirmation:
                     frappe.log_error(
                         "General Question During Confirmation",
-                        f"User asked a question while awaiting confirmation\n"
+                        f"LLM classified as question while awaiting confirmation\n"
                         f"Message: {message}\n"
                         f"Keeping awaiting_confirmation=True and answering question via RAG"
                     )
@@ -1502,6 +1832,11 @@ Is everything correct? Please reply:
                                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=safety_msg, queue="short", is_async=True)
                                 return
 
+                            # Convert outlet shop_full_name to branch_code for the API
+                            outlet_name = booking_data.get("outlet")
+                            outlet_branch_code = frappe.db.get_value("Outlet", {"shop_full_name": outlet_name}, "branch_code") or outlet_name
+                            booking_data["outlet"] = outlet_branch_code
+
                             # Log booking details one more time before API call for verification
                             frappe.log_error(
                                 "📋 CALLING API - BOOKING DETAILS",
@@ -1532,40 +1867,162 @@ Is everything correct? Please reply:
 #                             time.sleep(1)
 
                             try:
-                                # Call the MOCK booking API (for POC/simulation)
-                                api_response = handle_booking_api_mock(crm_lead_doc, whatsapp_id, booking_data)
-                                print(f"Mock Booking API response: {json.dumps(api_response, default=str)}", "WhatsApp Booking Debug")
+                                outlet_name = booking_data.get("outlet")
+                                outlet_branch_code = frappe.db.get_value("Outlet", outlet_name, "branch_code") or outlet_name
+                                booking_data["outlet"] = outlet_branch_code
+                                # Map booking_data fields to the CRM create_booking API field names
+                                api_booking_details = {
+                                    "customer_name": booking_data.get("customer_name"),
+                                    "booking_mobile": whatsapp_id,
+                                    "member_mobile": booking_data.get("phone"),
+                                    "outlet": outlet_branch_code,
+                                    "booking_date": booking_data.get("booking_date"),
+                                    "timeslot": booking_data.get("timeslot"),
+                                    "pax": booking_data.get("pax"),
+                                    "treatment": booking_data.get("treatment_type"),
+                                    "session": booking_data.get("session"),
+                                    "preferred_therapist": booking_data.get("preferred_masseur"),
+                                    "third_party_voucher": str(booking_data.get("third_party_voucher", "no")).lower() not in ("no", "false", "0", ""),
+                                    "package": str(booking_data.get("using_package", "no")).lower() not in ("no", "false", "0", ""),
+                                }
 
-                                # Get booking reference from mock API response
-                                booking_reference = api_response.get('data', {}).get('booking_reference', f"BKG{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}")
+
+                                api_response = create_booking(
+                                    crm_lead=crm_lead_doc.name,
+                                    booking_details=json.dumps(api_booking_details, default=str),
+                                    message=message,
+                                    booking_info_with_regex=json.dumps(booking_data, default=str),
+                                    booking_info=json.dumps(booking_data, default=str),
+                                )
+                                # Handle failed booking (e.g., slot unavailable, date overed)
+                                if api_response and api_response.get("success") == False:
+                                    frappe.log_error(
+                                        "📋 create_booking FAILED RESPONSE",
+                                        f"Full api_response keys: {list(api_response.keys())}\n"
+                                        f"Full api_response: {json.dumps(api_response, indent=2, default=str)}"
+                                    )
+                                    error_message = api_response.get("message", "Booking could not be completed.")
+                                    available_slots = api_response.get("available_slots", [])
+
+                                    suggested_slot_1 = api_response.get("suggested_slot_1", [])
+                                    suggested_slot_2 = api_response.get("suggested_slot_2", [])
+
+                                    if suggested_slot_1 or suggested_slot_2:
+                                        # Build numbered list of all suggested slots
+                                        numbered_slots = {}
+                                        slot_number = 1
+                                        number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
+
+                                        pax_val = api_response.get("pax", booking_data.get("pax", 1))
+                                        therapist_val = api_response.get("preferred_therapist", booking_data.get("preferred_masseur", "Any"))
+                                        session_val = api_response.get("session", booking_data.get("session", 60))
+                                        treatment_val = api_response.get("treatment", booking_data.get("treatment_type", ""))
+
+                                        suggested_msg = f"❌ {error_message}\n\nHere are the available alternatives:\n"
+
+                                        # Add suggested_slot_1 (same outlet)
+                                        if suggested_slot_1:
+                                            first_slot = suggested_slot_1[0]
+                                            outlet_name_1 = first_slot.get("shop_full_name", first_slot.get("outlet", ""))
+                                            suggested_msg += f"\n📍 *{outlet_name_1}*\n"
+                                            for slot in suggested_slot_1:
+                                                if slot_number <= len(number_emojis):
+                                                    # Format timeslot for display
+                                                    from datetime import datetime as dt
+                                                    try:
+                                                        t = dt.strptime(str(slot.get("timeslot", "")), "%H:%M:%S")
+                                                        time_display = t.strftime("%-I:%M%p").lower()
+                                                    except Exception:
+                                                        time_display = slot.get("timeslot", "")
+                                                    date_display = slot.get("booking_date", "")
+                                                    suggested_msg += f"{number_emojis[slot_number - 1]}  {date_display} at {time_display}\n"
+                                                    numbered_slots[str(slot_number)] = {
+                                                        "outlet": slot.get("outlet", ""),
+                                                        "shop_full_name": slot.get("shop_full_name", outlet_name_1),
+                                                        "booking_date": slot.get("booking_date", ""),
+                                                        "timeslot": slot.get("timeslot", ""),
+                                                    }
+                                                    slot_number += 1
+
+                                        # Add suggested_slot_2 (other outlets)
+                                        if suggested_slot_2:
+                                            for outlet_group in suggested_slot_2:
+                                                outlet_name_2 = outlet_group.get("shop_full_name", outlet_group.get("outlet", ""))
+                                                outlet_code_2 = outlet_group.get("outlet", "")
+                                                inner_slots = outlet_group.get("slots", [])
+                                                if inner_slots:
+                                                    suggested_msg += f"\n📍 *{outlet_name_2}*\n"
+                                                    for slot in inner_slots:
+                                                        if slot_number <= len(number_emojis):
+                                                            try:
+                                                                t = dt.strptime(str(slot.get("timeslot", "")), "%H:%M:%S")
+                                                                time_display = t.strftime("%-I:%M%p").lower()
+                                                            except Exception:
+                                                                time_display = slot.get("timeslot", "")
+                                                            date_display = slot.get("booking_date", "")
+                                                            suggested_msg += f"{number_emojis[slot_number - 1]}  {date_display} at {time_display}\n"
+                                                            numbered_slots[str(slot_number)] = {
+                                                                "outlet": slot.get("outlet", outlet_code_2),
+                                                                "shop_full_name": outlet_name_2,
+                                                                "booking_date": slot.get("booking_date", ""),
+                                                                "timeslot": slot.get("timeslot", ""),
+                                                            }
+                                                            slot_number += 1
+
+                                        suggested_msg += f"\n👥 Pax: {pax_val} ({therapist_val})\n⏳ Duration: {session_val}mins {treatment_val}\n"
+                                        suggested_msg += "\n⚠️ Please note: This is NOT a booking confirmation.\nYour booking will only be confirmed after you receive our official confirmation message 💆‍♀️✨\n"
+                                        suggested_msg += "\n*Reply with the number* of your preferred slot (e.g. *1*, *2*, *3*...)"
+
+                                        # Save state so user can pick a slot
+                                        slot_selection_data = booking_data.copy()
+                                        slot_selection_data['awaiting_slot_selection'] = True
+                                        slot_selection_data['awaiting_confirmation'] = False
+                                        slot_selection_data['numbered_slots'] = numbered_slots
+                                        slot_selection_data['available_slots'] = available_slots
+                                        # Preserve API field mappings for re-booking
+                                        slot_selection_data['_member_mobile'] = api_response.get("member_mobile", booking_data.get("phone"))
+                                        slot_selection_data['_pax'] = api_response.get("pax", booking_data.get("pax"))
+                                        slot_selection_data['_treatment'] = api_response.get("treatment", booking_data.get("treatment_type"))
+                                        slot_selection_data['_session'] = api_response.get("session", booking_data.get("session"))
+                                        slot_selection_data['_preferred_therapist'] = api_response.get("preferred_therapist", booking_data.get("preferred_masseur"))
+                                        slot_selection_data['_third_party_voucher'] = api_response.get("third_party_voucher", booking_data.get("third_party_voucher"))
+                                        slot_selection_data['_package'] = api_response.get("package", booking_data.get("using_package"))
+                                        save_pending_booking_data(crm_lead_doc, slot_selection_data)
+
+                                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=suggested_msg, queue="short", is_async=True)
+                                    else:
+                                        error_msg = f"❌ {error_message}\n\nPlease try a different date/time or contact our outlet directly."
+                                        enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=error_msg, queue="short", is_async=True)
+                                    return
+
+                                # Get booking reference from API response
+                                api_booking_data = api_response.get('booking_data', [{}])
+                                first_booking = api_booking_data[0] if api_booking_data else {}
+                                booking_reference = first_booking.get('booking_id') or first_booking.get('order_id') or f"BKG{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
+                                order_id = first_booking.get('order_id', '')
 
                                 # Save confirmed booking data (don't clear it - needed for update/cancel)
                                 confirmed_booking_data = booking_data.copy()
                                 confirmed_booking_data['confirmed'] = True
                                 confirmed_booking_data['booking_reference'] = booking_reference
+                                confirmed_booking_data['order_id'] = order_id
                                 confirmed_booking_data['confirmed_at'] = frappe.utils.now_datetime().isoformat()
                                 save_pending_booking_data(crm_lead_doc, confirmed_booking_data)
 
-                                # Always build booking details summary to show to customer
-                                booking_summary = f"""📋 Your Booking Details:
-- Booking Reference: {booking_reference}
-- Name: {booking_data.get('customer_name')}
-- Phone: {booking_data.get('phone')}
-- Outlet: {booking_data.get('outlet')}
-- Date: {booking_data.get('booking_date')}
-- Time: {booking_data.get('timeslot')}
-- Pax: {booking_data.get('pax')}
-- Treatment: {booking_data.get('treatment_type')}
-- Duration: {booking_data.get('session')} minutes
-- Preferred Masseur: {booking_data.get('preferred_masseur')}
-- 3rd Party Voucher: {booking_data.get('third_party_voucher', 'N/A')}
-- Using Package: {booking_data.get('using_package', 'N/A')}"""
-
-                                # Combine API response message (if any) with booking details
-                                if api_response and api_response.get('message'):
-                                    confirmation_msg = f"✅ Booking confirmed!\n\n{booking_summary}\n\n{api_response.get('message')}\n\n💡 Tip: You can update or cancel your booking anytime by sending us a message!\n\nThank you for choosing HealthLand! 💚"
-                                else:
-                                    confirmation_msg = f"✅ Your booking has been submitted!\n\n{booking_summary}\n\nWe'll confirm your appointment shortly.\n\n💡 Tip: You can update or cancel your booking anytime by sending us a message!\n\nThank you! 💚"
+                                # Use confirmation_message from API if available, otherwise build our own
+                                confirmation_msg = api_response.get('confirmation_message', '')
+                                if not confirmation_msg:
+                                    confirmation_msg = (
+                                        f"✅ Booking confirmed!\n\n"
+                                        f"📋 Booking Reference: {booking_reference}\n"
+                                        f"- Name: {booking_data.get('customer_name')}\n"
+                                        f"- Date: {booking_data.get('booking_date')}\n"
+                                        f"- Time: {booking_data.get('timeslot')}\n"
+                                        f"- Treatment: {booking_data.get('treatment_type')}\n"
+                                        f"- Duration: {booking_data.get('session')} minutes\n"
+                                        f"- Pax: {booking_data.get('pax')}\n\n"
+                                        f"Thank you for choosing HealthLand! 💚"
+                                    )
 
                                 print(confirmation_msg)
                                 enqueue(method=send_message_with_delay, crm_lead_doc=crm_lead_doc, whatsapp_id=whatsapp_id, text=str(confirmation_msg), queue="short", is_async=True)

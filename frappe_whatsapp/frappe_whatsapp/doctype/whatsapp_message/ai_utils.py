@@ -1,4 +1,5 @@
 import frappe
+from datetime import datetime
 
 def is_confirmation_message(message, context=None):
     """
@@ -109,14 +110,26 @@ def is_general_question(message):
     Returns:
         bool: True if message is a general question
     """
-    # Question patterns
+    # Question patterns - English
     question_keywords = [
         'what', 'when', 'where', 'how', 'why', 'who', 'which',
         'can you', 'could you', 'do you', 'does', 'is there', 'are there',
+        'can i ask', 'can i know', 'may i know',
         'tell me', 'explain', 'what is', 'what are', 'how much', 'how long',
+        'want to know', 'like to know', 'interested to know', 'curious',
+        'any info', 'more info', 'information',
         'price', 'cost', 'location', 'outlet', 'operating hours', 'open',
         'available', 'offer', 'provide', 'difference', 'compare',
-        'package', 'promotion', 'discount', 'membership'
+        'package', 'promotion', 'discount', 'membership',
+        'recommend', 'suggestion', 'suggest',
+        'how to book',  # asking about booking process, not actually booking
+    ]
+
+    # Question patterns - Malay
+    malay_question_keywords = [
+        'apa', 'bila', 'mana', 'macam mana', 'kenapa', 'siapa',
+        'berapa', 'ada tak', 'ada ke', 'boleh tak', 'boleh ke',
+        'nak tahu', 'nak tanya', 'tanya sikit',
     ]
 
     message_lower = message.lower().strip()
@@ -124,11 +137,12 @@ def is_general_question(message):
     # Check if it's a question
     has_question_mark = '?' in message
     has_question_word = any(keyword in message_lower for keyword in question_keywords)
+    has_malay_question = any(keyword in message_lower for keyword in malay_question_keywords)
 
     # Exclude confirmation responses (yes/no)
     is_confirmation = is_confirmation_message(message) or is_change_request(message)
 
-    return (has_question_mark or has_question_word) and not is_confirmation
+    return (has_question_mark or has_question_word or has_malay_question) and not is_confirmation
 
 
 def analyze_confirmation_response_intent(message, pending_booking_data):
@@ -188,6 +202,8 @@ IMPORTANT RULES:
 - If the message contains specific field values to update, classify as UPDATE_FIELDS
 - Only classify as WANTS_TO_CHANGE if the user is rejecting without providing new field information
 - For UPDATE_FIELDS, extract all field updates mentioned
+- CRITICAL FOR DATES: Today's date is {datetime.now().strftime('%Y-%m-%d')}. ALL relative date words ("tomorrow", "today", "next Monday", "this Friday", etc.) MUST be calculated relative to TODAY'S date, NOT relative to the existing booking date. For example, if today is 2026-03-28, "tomorrow" means 2026-03-29. Convert dates to YYYY-MM-DD format.
+- For times: convert to 24-hour HH:MM:SS format (e.g., "2pm" → "14:00:00")
 
 AVAILABLE FIELDS YOU CAN UPDATE:
 - customer_name: Customer's name
